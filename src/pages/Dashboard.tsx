@@ -235,6 +235,17 @@ const Dashboard: FC = () => {
   const triggerCall = async (leadId: string) => {
     try {
       setIsCallInProgress(true);
+      
+      // Find the lead in the current leads array
+      const leadToCall = leads.find(lead => lead.id === leadId);
+      
+      // Check if lead is eligible for calling
+      if (leadToCall && leadToCall.status !== 'Pending') {
+        toast.error(`Cannot call lead: ${leadToCall.name}. Lead status is ${leadToCall.status}`);
+        setIsCallInProgress(false);
+        return;
+      }
+      
       const response = await supabase.functions.invoke('trigger-call', {
         body: { leadId }
       });
@@ -286,6 +297,9 @@ const Dashboard: FC = () => {
     const pacingInterval = (1 / parseInt(selectedPacing, 10)) * 1000;
     setCurrentLeadIndex(0);
     
+    // Create a set to track leads that have already been processed
+    const processedLeadIds = new Set<string>();
+    
     // Start the interval to process leads based on pacing
     const id = setInterval(() => {
       setCurrentLeadIndex(prevIndex => {
@@ -309,8 +323,11 @@ const Dashboard: FC = () => {
         // Make sure we have a valid lead at this index
         const currentLead = pendingLeads[prevIndex];
         
-        // Check if the current lead is valid before triggering the call
-        if (currentLead && currentLead.id && !isCallInProgress) {
+        // Check if we already processed this lead
+        if (currentLead && currentLead.id && !isCallInProgress && !processedLeadIds.has(currentLead.id)) {
+          // Add the lead to the processed set
+          processedLeadIds.add(currentLead.id);
+          // Trigger the call
           triggerCall(currentLead.id);
         }
         

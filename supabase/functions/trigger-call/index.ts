@@ -63,6 +63,20 @@ serve(async (req) => {
       );
     }
 
+    // Check if lead call has already been initiated or completed
+    if (lead.status !== "Pending") {
+      return new Response(
+        JSON.stringify({ 
+          success: false,
+          message: `This lead already has status: ${lead.status}. Cannot initiate another call.`
+        }),
+        { 
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      );
+    }
+
     // Prepare the payload for Vapi
     const payload = {
       assistantId: "40664072-59ad-4106-9d5d-1fd5ed5dacbe", // Using the ID provided by user
