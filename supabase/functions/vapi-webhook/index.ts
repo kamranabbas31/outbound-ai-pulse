@@ -15,8 +15,8 @@ serve(async (req) => {
   try {
     // Parse the webhook payload
     const payload = await req.json();
-    console.log("Received webhook from Vapi:", JSON.stringify(payload, null, 2));
-
+    console.log("Received webhook from Vapi (start of payload):", JSON.stringify(payload, null, 2).substring(0, 500) + "...");
+    
     // Get the Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -24,9 +24,25 @@ serve(async (req) => {
     // Initialize Supabase client
     const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
     
-    // Try different methods to extract lead information
+    // Try different approaches to extract critical information
     let contactId = null;
     let phoneNumber = null;
+    let disposition = "Unknown";
+    let duration = 0;
+    let status = "Completed";
+    
+    // DEBUG: Log important payload sections to trace what's available
+    console.log("Payload structure info:");
+    console.log("Has message?", !!payload.message);
+    console.log("Has customer?", !!payload.customer);
+    if (payload.message) {
+      console.log("Has message.artifact?", !!payload.message.artifact);
+      console.log("Has message.analysis?", !!payload.message.analysis);
+      if (payload.message.artifact) {
+        console.log("Has message.artifact.customer?", !!payload.message.artifact.customer);
+        console.log("Has message.artifact.assistantOverrides?", !!payload.message.artifact.assistantOverrides);
+      }
+    }
     
     // Extract phone number from payload (try multiple paths)
     if (payload.customer && payload.customer.number) {
@@ -54,35 +70,75 @@ serve(async (req) => {
       contactId = payload.message.artifact.assistantOverrides.metadata.contactId;
       console.log(`Found contactId in artifact.assistantOverrides.metadata: ${contactId}`);
     }
-    // Method 3: Look for phone number and find matching lead
-    else if (phoneNumber) {
+    // Method 3: Check if assistantOverrides is at the root level
+    else if (payload.assistantOverrides && 
+             payload.assistantOverrides.metadata && 
+             payload.assistantOverrides.metadata.contactId) {
+      contactId = payload.assistantOverrides.metadata.contactId;
+      console.log(`Found contactId in root assistantOverrides.metadata: ${contactId}`);
+    }
+    
+    // Extract disposition from analysis
+    if (payload.message && payload.message.analysis) {
+      if (payload.message.analysis.successEvaluation) {
+        try {
+          // Try to parse the successEvaluation JSON string
+          const evaluationData = JSON.parse(payload.message.analysis.successEvaluation);
+          if (evaluationData && evaluationData.disposition) {
+            disposition = evaluationData.disposition;
+            console.log(`Extracted disposition from analysis.successEvaluation: ${disposition}`);
+          }
+        } catch (e) {
+          console.log("Error parsing successEvaluation JSON:", e);
+          // Keep the raw string if it's not valid JSON
+          disposition = payload.message.analysis.successEvaluation;
+        }
+      } else if (payload.message.analysis.structuredData) {
+        // Try to extract disposition from structuredData if it exists
+        const structuredData = payload.message.analysis.structuredData;
+        if (structuredData.disposition) {
+          disposition = structuredData.disposition;
+          console.log(`Extracted disposition from analysis.structuredData: ${disposition}`);
+        } else if (structuredData.customer_objection) {
+          disposition = structuredData.customer_objection;
+          console.log(`Using customer_objection as disposition: ${disposition}`);
+        } else if (structuredData.call_reason) {
+          disposition = `Call reason: ${structuredData.call_reason}`;
+          console.log(`Using call_reason as disposition: ${disposition}`);
+        }
+      }
+    }
+    
+    // Extract call duration from various places
+    if (payload.durationSeconds) {
+      duration = payload.durationSeconds;
+      console.log(`Extracted duration from payload.durationSeconds: ${duration}`);
+    } else if (payload.message && payload.message.durationSeconds) {
+      duration = payload.message.durationSeconds;
+      console.log(`Extracted duration from payload.message.durationSeconds: ${duration}`);
+    }
+    
+    // Calculate cost based on duration (in minutes)
+    const durationMinutes = duration / 60;
+    const cost = calculateCallCost(durationMinutes);
+    console.log(`Calculated cost: $${cost.toFixed(2)} for ${durationMinutes.toFixed(1)} minutes`);
+    
+    // Determine call status
+    if (payload.success === false || (payload.message && payload.message.success === false)) {
+      status = "Failed";
+      console.log("Call status determined as Failed");
+    } else {
+      console.log("Call status determined as Completed");
+    }
+    
+    // If no contactId but we have a phone number, look up the lead
+    if (!contactId && phoneNumber) {
       console.log(`No contactId found, trying to find lead by phone number: ${phoneNumber}`);
       
-      const { data, error } = await supabaseAdmin
-        .from("leads")
-        .select("id, phone_number")
-        .eq("phone_number", phoneNumber)
-        .limit(1);
-        
-      if (!error && data && data.length > 0) {
-        contactId = data[0].id;
-        console.log(`Found lead with phone number ${phoneNumber}, id: ${contactId}`);
-      } else {
-        console.log(`No lead found with phone number ${phoneNumber}`);
-        // Try cleaning the phone number (remove any formatting) and try again
-        const cleanedPhoneNumber = phoneNumber.replace(/\D/g, '');
-        if (cleanedPhoneNumber !== phoneNumber) {
-          const { data: data2, error: error2 } = await supabaseAdmin
-            .from("leads")
-            .select("id, phone_number")
-            .ilike("phone_number", `%${cleanedPhoneNumber.slice(-10)}%`)
-            .limit(1);
-            
-          if (!error2 && data2 && data2.length > 0) {
-            contactId = data2[0].id;
-            console.log(`Found lead with cleaned phone number ${cleanedPhoneNumber}, id: ${contactId}`);
-          }
-        }
+      const leadResult = await findLeadByPhoneNumber(supabaseAdmin, phoneNumber);
+      if (leadResult) {
+        contactId = leadResult.id;
+        console.log(`Found lead with phone ${phoneNumber}, id: ${contactId}`);
       }
     }
     
@@ -100,53 +156,9 @@ serve(async (req) => {
       );
     }
     
-    // Extract relevant data from payload
-    let disposition = "Unknown";
-    let duration = 0;
-    let status = "Completed";
-    
-    // If payload includes analysis data, extract the disposition
-    if (payload.message && payload.message.analysis && payload.message.analysis.successEvaluation) {
-      try {
-        // Try to parse the successEvaluation JSON string
-        const evaluationData = JSON.parse(payload.message.analysis.successEvaluation);
-        if (evaluationData && evaluationData.disposition) {
-          disposition = evaluationData.disposition;
-          console.log(`Extracted disposition from analysis: ${disposition}`);
-        }
-      } catch (e) {
-        console.error("Error parsing successEvaluation JSON:", e);
-        // Keep the raw string if it's not valid JSON
-        disposition = payload.message.analysis.successEvaluation;
-      }
-    }
-    
-    // Extract call duration
-    if (payload.durationSeconds) {
-      duration = payload.durationSeconds;
-      console.log(`Extracted duration from payload.durationSeconds: ${duration}`);
-    } else if (payload.message && payload.message.durationSeconds) {
-      duration = payload.message.durationSeconds;
-      console.log(`Extracted duration from payload.message.durationSeconds: ${duration}`);
-    }
-    
-    // Calculate cost based on duration (in minutes)
-    // $0.99 per minute, converting seconds to minutes
-    const durationMinutes = duration / 60;
-    const cost = durationMinutes * 0.99;
-    console.log(`Calculated cost: $${cost.toFixed(2)} for ${durationMinutes.toFixed(1)} minutes`);
-    
-    // Determine call status
-    if (payload.success === false || (payload.message && payload.message.success === false)) {
-      status = "Failed";
-      console.log("Call status determined as Failed");
-    } else {
-      console.log("Call status determined as Completed");
-    }
-    
     // Update the lead in the database if we have a contactId
     if (contactId) {
-      console.log(`Updating lead ${contactId} with status: ${status}, disposition: ${disposition}, duration: ${duration}, cost: ${cost}`);
+      console.log(`Updating lead ${contactId} with status: ${status}, disposition: ${disposition}, duration: ${durationMinutes}, cost: ${cost}`);
       
       const { data, error } = await supabaseAdmin
         .from("leads")
@@ -173,7 +185,6 @@ serve(async (req) => {
       console.log(`Successfully updated lead ${contactId}:`, data);
     } else {
       console.warn("Webhook received without contactId and couldn't find matching lead");
-      // Still return a success to acknowledge receipt
     }
     
     // Always return a success to Vapi
@@ -200,14 +211,65 @@ serve(async (req) => {
 });
 
 // Helper function to calculate call cost
-function calculateCallCost(durationSeconds: number): number {
+function calculateCallCost(durationMinutes: number): number {
   // $0.99 per minute
   const minuteRate = 0.99;
-  const minutes = durationSeconds / 60;
-  return minutes * minuteRate;
+  return durationMinutes * minuteRate;
 }
 
-// Helper to create a Supabase client (copied from trigger-call edge function)
+// Helper function to find a lead by phone number
+async function findLeadByPhoneNumber(supabase: any, phoneNumber: string) {
+  // Try exact match first
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id, phone_number")
+    .eq("phone_number", phoneNumber)
+    .limit(1);
+    
+  if (!error && data && data.length > 0) {
+    return data[0];
+  }
+  
+  // If no exact match, try cleaning the phone number
+  const cleanedPhoneNumber = phoneNumber.replace(/\D/g, '');
+  const lastTenDigits = cleanedPhoneNumber.slice(-10);
+  
+  console.log(`No exact match found, trying with cleaned number: ${cleanedPhoneNumber} and last 10 digits: ${lastTenDigits}`);
+  
+  // Try with last 10 digits (to match numbers with different country codes)
+  const { data: data2, error: error2 } = await supabase
+    .from("leads")
+    .select("id, phone_number")
+    .ilike("phone_number", `%${lastTenDigits}%`)
+    .limit(1);
+    
+  if (!error2 && data2 && data2.length > 0) {
+    console.log(`Found lead with pattern matching on last 10 digits: ${lastTenDigits}`);
+    return data2[0];
+  }
+  
+  // As a last resort, try each lead and compare the cleaned numbers
+  console.log("Trying more advanced phone number matching...");
+  const { data: allLeads, error: leadsError } = await supabase
+    .from("leads")
+    .select("id, phone_number")
+    .limit(20);  // Limit to avoid checking too many
+    
+  if (!leadsError && allLeads) {
+    for (const lead of allLeads) {
+      const leadCleanNumber = lead.phone_number.replace(/\D/g, '');
+      if (leadCleanNumber.endsWith(lastTenDigits) || cleanedPhoneNumber.endsWith(leadCleanNumber.slice(-10))) {
+        console.log(`Found matching lead by comparing cleaned numbers: ${lead.id}`);
+        return lead;
+      }
+    }
+  }
+  
+  console.log("No matching lead found after all attempts");
+  return null;
+}
+
+// Helper to create a Supabase client
 function createClient(supabaseUrl: string, supabaseKey: string) {
   return {
     from: (table: string) => ({
@@ -237,6 +299,13 @@ function createClient(supabaseUrl: string, supabaseKey: string) {
             }
           }).then(res => res.json()).then(data => ({ data, error: null }))
         }),
+        limit: (n: number) => fetch(`${supabaseUrl}/rest/v1/${table}?select=${columns}&limit=${n}`, {
+          headers: {
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${supabaseKey}`,
+            "Content-Type": "application/json"
+          }
+        }).then(res => res.json()).then(data => ({ data, error: null })),
         single: () => fetch(`${supabaseUrl}/rest/v1/${table}?select=${columns}`, {
           headers: {
             "apikey": supabaseKey,
