@@ -32,6 +32,9 @@ const Billing: FC = () => {
   
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
+  // Get today's date in YYYY-MM-DD format for max attribute
+  const today = new Date().toISOString().split('T')[0];
+
   // Format dates for display
   const formatDisplayDate = (dateString: string): string => {
     const date = new Date(dateString);
@@ -109,6 +112,7 @@ const Billing: FC = () => {
               value={startDate}
               onChange={(e) => handleDateChange('start', e.target.value)}
               className="border rounded p-2 text-sm"
+              max={today}
             />
           </div>
           <div className="flex items-center space-x-2">
@@ -119,6 +123,7 @@ const Billing: FC = () => {
               value={endDate}
               onChange={(e) => handleDateChange('end', e.target.value)}
               className="border rounded p-2 text-sm"
+              max={today}
             />
           </div>
           <Button 
