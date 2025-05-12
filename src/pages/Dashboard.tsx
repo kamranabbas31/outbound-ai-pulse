@@ -1,4 +1,3 @@
-
 import { FC, useState, useEffect } from "react";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause } from "lucide-react";
 import { toast } from "sonner";
@@ -35,7 +34,8 @@ const Dashboard: FC = () => {
     totalCost: 0,
   });
   const [currentLeadIndex, setCurrentLeadIndex] = useState(-1);
-  const [intervalId, setIntervalId] = useState<number | null>(null);
+  // Changed from number to NodeJS.Timeout | null to match setTimeout return type
+  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
 
   // Fetch leads on component mount
   useEffect(() => {
@@ -219,10 +219,12 @@ const Dashboard: FC = () => {
       setCurrentLeadIndex(prevIndex => {
         if (prevIndex >= pendingLeads.length - 1) {
           // We've processed all leads, stop the interval
-          clearInterval(id);
-          setIntervalId(null);
-          setIsExecuting(false);
-          toast.success("Finished processing all leads");
+          if (intervalId !== null) {
+            clearInterval(intervalId);
+            setIntervalId(null);
+            setIsExecuting(false);
+            toast.success("Finished processing all leads");
+          }
           return -1;
         }
         
