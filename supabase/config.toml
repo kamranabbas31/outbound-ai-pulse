@@ -3,3 +3,7 @@ project_id = "evoogvazubdyjapdzvpt"
 
 [functions.trigger-call]
 verify_jwt = true
+
+[functions.vapi-webhook]
+verify_jwt = false
+
