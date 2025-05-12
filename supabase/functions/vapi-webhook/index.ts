@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 // Define CORS headers for browser requests
@@ -25,16 +24,79 @@ serve(async (req) => {
     // Initialize Supabase client
     const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
     
+    // Try different methods to extract lead information
+    let contactId = null;
+    
+    // Method 1: Check if contactId is in metadata
+    if (payload.metadata && payload.metadata.contactId) {
+      contactId = payload.metadata.contactId;
+      console.log(`Found contactId in metadata: ${contactId}`);
+    }
+    // Method 2: Check if it's in assistantOverrides.metadata
+    else if (payload.message && 
+             payload.message.artifact && 
+             payload.message.artifact.assistantOverrides && 
+             payload.message.artifact.assistantOverrides.metadata && 
+             payload.message.artifact.assistantOverrides.metadata.contactId) {
+      contactId = payload.message.artifact.assistantOverrides.metadata.contactId;
+      console.log(`Found contactId in artifact.assistantOverrides.metadata: ${contactId}`);
+    }
+    // Method 3: Look for phone number in customer data and find matching lead
+    else if (payload.customer && payload.customer.number) {
+      const phoneNumber = payload.customer.number;
+      console.log(`No contactId found, trying to find lead by phone number: ${phoneNumber}`);
+      
+      const { data, error } = await supabaseAdmin
+        .from("leads")
+        .select("id")
+        .eq("phone_number", phoneNumber)
+        .limit(1);
+        
+      if (!error && data && data.length > 0) {
+        contactId = data[0].id;
+        console.log(`Found lead with phone number ${phoneNumber}, id: ${contactId}`);
+      }
+    }
+    
     // Extract relevant data from payload
-    const { contactId } = payload.metadata || {};
-    const disposition = payload.disposition || "Unknown";
-    const duration = payload.durationSeconds || 0;
+    let disposition = "Unknown";
+    let duration = 0;
+    let status = "Completed";
+    
+    // If payload includes analysis data, extract the disposition
+    if (payload.message && payload.message.analysis && payload.message.analysis.successEvaluation) {
+      try {
+        // Try to parse the successEvaluation JSON string
+        const evaluationData = JSON.parse(payload.message.analysis.successEvaluation);
+        if (evaluationData && evaluationData.disposition) {
+          disposition = evaluationData.disposition;
+          console.log(`Extracted disposition from analysis: ${disposition}`);
+        }
+      } catch (e) {
+        console.error("Error parsing successEvaluation JSON:", e);
+        // Keep the raw string if it's not valid JSON
+        disposition = payload.message.analysis.successEvaluation;
+      }
+    }
+    
+    // Extract call duration
+    if (payload.durationSeconds) {
+      duration = payload.durationSeconds;
+    } else if (payload.message && payload.message.durationSeconds) {
+      duration = payload.message.durationSeconds;
+    }
+    
+    // Calculate cost based on duration
     const cost = calculateCallCost(duration);
-    const status = determineCallStatus(payload);
+    
+    // Determine call status
+    if (payload.success === false || (payload.message && payload.message.success === false)) {
+      status = "Failed";
+    }
     
     // Update the lead in the database if we have a contactId
     if (contactId) {
-      console.log(`Updating lead ${contactId} with status: ${status}, disposition: ${disposition}`);
+      console.log(`Updating lead ${contactId} with status: ${status}, disposition: ${disposition}, duration: ${duration}, cost: ${cost}`);
       
       const { error } = await supabaseAdmin
         .from("leads")
@@ -56,8 +118,10 @@ serve(async (req) => {
           }
         );
       }
+      
+      console.log(`Successfully updated lead ${contactId}`);
     } else {
-      console.warn("Webhook received without contactId in metadata");
+      console.warn("Webhook received without contactId and couldn't find matching lead");
     }
     
     // Always return a success to Vapi
@@ -119,7 +183,14 @@ function createClient(supabaseUrl: string, supabaseKey: string) {
               "Authorization": `Bearer ${supabaseKey}`,
               "Content-Type": "application/json"
             }
-          }).then(res => res.json()).then(data => ({ data: data[0], error: null }))
+          }).then(res => res.json()).then(data => ({ data: data[0], error: null })),
+          limit: (n: number) => fetch(`${supabaseUrl}/rest/v1/${table}?select=${columns}&${column}=eq.${value}&limit=${n}`, {
+            headers: {
+              "apikey": supabaseKey,
+              "Authorization": `Bearer ${supabaseKey}`,
+              "Content-Type": "application/json"
+            }
+          }).then(res => res.json()).then(data => ({ data, error: null }))
         }),
         single: () => fetch(`${supabaseUrl}/rest/v1/${table}?select=${columns}`, {
           headers: {
@@ -139,7 +210,7 @@ function createClient(supabaseUrl: string, supabaseKey: string) {
             "Prefer": "return=minimal"
           },
           body: JSON.stringify(updates)
-        }).then(res => ({ data: {}, error: null }))
+        }).then(res => res.status === 204 ? { data: {}, error: null } : { data: null, error: { message: "Failed to update" } })
       })
     })
   };
