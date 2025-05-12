@@ -45,12 +45,46 @@ export type Database = {
         }
         Relationships: []
       }
+      phone_ids: {
+        Row: {
+          created_at: string
+          daily_usage: number
+          id: string
+          is_active: boolean | null
+          last_used_date: string | null
+          phone_id: string
+        }
+        Insert: {
+          created_at?: string
+          daily_usage?: number
+          id?: string
+          is_active?: boolean | null
+          last_used_date?: string | null
+          phone_id: string
+        }
+        Update: {
+          created_at?: string
+          daily_usage?: number
+          id?: string
+          is_active?: boolean | null
+          last_used_date?: string | null
+          phone_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_available_phone_id: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      reset_phone_id_usage: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

@@ -71,6 +71,18 @@ const Dashboard: FC = () => {
     });
   };
 
+  // Get an available phone ID from the pool
+  const getAvailablePhoneId = async () => {
+    const { data, error } = await supabase.rpc('get_available_phone_id');
+    
+    if (error) {
+      console.error("Error getting available phone ID:", error);
+      return null;
+    }
+    
+    return data;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -91,21 +103,45 @@ const Dashboard: FC = () => {
             return;
           }
           
+          // Get available phone IDs for these leads
+          let successCount = 0;
+          let errorCount = 0;
+          
           // Insert leads into the database
           for (const lead of parsedLeads) {
-            const { error } = await supabase.from('leads').insert({
-              name: lead.name,
-              phone_number: lead.phoneNumber,
-              status: 'Pending'
-            });
-            
-            if (error) {
-              console.error("Error inserting lead:", error);
-              toast.error(`Failed to insert lead: ${lead.name}`);
+            try {
+              // Try to get an available phone ID
+              const phoneId = await getAvailablePhoneId();
+              
+              // Insert the lead with the phone ID if available
+              const { error } = await supabase.from('leads').insert({
+                name: lead.name,
+                phone_number: lead.phoneNumber,
+                phone_id: phoneId,  // This might be null if no phone IDs are available
+                status: phoneId ? 'Pending' : 'Failed',
+                disposition: phoneId ? null : 'No available phone ID'
+              });
+              
+              if (error) {
+                console.error("Error inserting lead:", error);
+                errorCount++;
+              } else {
+                successCount++;
+              }
+            } catch (err) {
+              console.error("Error processing lead:", err);
+              errorCount++;
             }
           }
           
-          toast.success(`Successfully uploaded ${parsedLeads.length} leads`);
+          if (successCount > 0) {
+            toast.success(`Successfully uploaded ${successCount} leads`);
+          }
+          
+          if (errorCount > 0) {
+            toast.error(`Failed to upload ${errorCount} leads`);
+          }
+          
           fetchLeads(); // Refresh the leads list
         } catch (err) {
           console.error("Error parsing CSV:", err);
@@ -126,8 +162,27 @@ const Dashboard: FC = () => {
     e.target.value = '';
   };
 
-  const toggleExecution = () => {
-    setIsExecuting(!isExecuting);
+  const toggleExecution = async () => {
+    if (!isExecuting) {
+      // Starting execution
+      const pendingLeads = leads.filter(lead => lead.status === 'Pending');
+      
+      if (pendingLeads.length === 0) {
+        toast.error("No pending leads to process");
+        return;
+      }
+      
+      setIsExecuting(true);
+      toast.success(`Started processing ${pendingLeads.length} leads`);
+      
+      // In a real implementation, this would start making calls using the assigned phone IDs
+      // For now, we'll just simulate by changing statuses after a delay
+      
+    } else {
+      // Stopping execution
+      setIsExecuting(false);
+      toast.info("Stopped execution");
+    }
   };
 
   return (
