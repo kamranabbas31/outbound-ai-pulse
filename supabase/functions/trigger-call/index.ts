@@ -63,9 +63,6 @@ serve(async (req) => {
       );
     }
 
-    // Webhook URL for call completion
-    const webhookUrl = `https://${PROJECT_ID}.supabase.co/functions/v1/vapi-webhook`;
-
     // Prepare the payload for Vapi
     const payload = {
       assistantId: "40664072-59ad-4106-9d5d-1fd5ed5dacbe", // Using the ID provided by user
@@ -96,8 +93,8 @@ serve(async (req) => {
           successEvaluationPlan: {
             enabled: true
           }
-        },
-        webhookUrl: webhookUrl
+        }
+        // Removed webhookUrl property as it's causing the API error
       },
       phoneNumberId: lead.phone_id,
       customer: {
