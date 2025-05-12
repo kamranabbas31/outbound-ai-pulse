@@ -43,20 +43,49 @@ const Dashboard: FC = () => {
   const [showNewCampaignDialog, setShowNewCampaignDialog] = useState(false);
   const [campaignName, setCampaignName] = useState("");
   const [lastUploadedFileName, setLastUploadedFileName] = useState<string | null>(null);
+  const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
 
-  // Fetch leads on component mount
+  // Fetch leads on component mount and set up refresh interval
   useEffect(() => {
     fetchLeads();
-  }, []);
-
-  // Cleanup interval on unmount
-  useEffect(() => {
+    
+    // Set up a refresh interval to update leads every 5 seconds
+    const interval = setInterval(() => {
+      fetchLeads();
+    }, 5000);
+    
+    setRefreshInterval(interval);
+    
+    // Cleanup interval on unmount
     return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      
       if (intervalId !== null) {
         clearInterval(intervalId);
       }
     };
-  }, [intervalId]);
+  }, []);
+
+  // Setup subscription to leads table changes
+  useEffect(() => {
+    const subscription = supabase
+      .channel('public:leads')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'leads' 
+      }, payload => {
+        console.log('Change received:', payload);
+        fetchLeads(); // Refresh leads when changes occur
+      })
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
 
   const fetchLeads = async () => {
     const { data, error } = await supabase
@@ -195,6 +224,19 @@ const Dashboard: FC = () => {
         console.error("Error initiating call:", response.error);
       } else if (response.data.success) {
         toast.success("Call initiated successfully");
+        
+        // Update the lead status to "In Progress" and set disposition
+        const { error: updateError } = await supabase
+          .from('leads')
+          .update({
+            status: 'In Progress',
+            disposition: 'Call initiated'
+          })
+          .eq('id', leadId);
+          
+        if (updateError) {
+          console.error("Error updating lead status:", updateError);
+        }
       } else {
         toast.error(response.data.message || "Failed to initiate call");
       }
@@ -334,7 +376,12 @@ const Dashboard: FC = () => {
             <h2 className="text-2xl font-bold text-gray-800 mt-4">Dashboard</h2>
             <p className="text-muted-foreground">Manage and monitor your AI outbound calling campaigns.</p>
           </div>
-          <Button className="bg-primary" onClick={handleNewCampaign}>+ New Campaign</Button>
+          <div className="flex items-center space-x-4">
+            <Button variant="outline" onClick={fetchLeads}>
+              Refresh Data
+            </Button>
+            <Button className="bg-primary" onClick={handleNewCampaign}>+ New Campaign</Button>
+          </div>
         </div>
       </div>
 
