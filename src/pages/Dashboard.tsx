@@ -1,6 +1,6 @@
 
 import { FC, useState, useEffect } from "react";
-import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play } from "lucide-react";
+import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause } from "lucide-react";
 import { toast } from "sonner";
 import StatCard from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ const Dashboard: FC = () => {
   const [selectedPacing, setSelectedPacing] = useState("1");
   const [isExecuting, setIsExecuting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCallInProgress, setIsCallInProgress] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [stats, setStats] = useState({
     completed: 0,
@@ -33,11 +34,22 @@ const Dashboard: FC = () => {
     totalDuration: 0,
     totalCost: 0,
   });
+  const [currentLeadIndex, setCurrentLeadIndex] = useState(-1);
+  const [intervalId, setIntervalId] = useState<number | null>(null);
 
   // Fetch leads on component mount
   useEffect(() => {
     fetchLeads();
   }, []);
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [intervalId]);
 
   const fetchLeads = async () => {
     const { data, error } = await supabase
@@ -162,27 +174,96 @@ const Dashboard: FC = () => {
     e.target.value = '';
   };
 
-  const toggleExecution = async () => {
-    if (!isExecuting) {
-      // Starting execution
-      const pendingLeads = leads.filter(lead => lead.status === 'Pending');
+  const triggerCall = async (leadId: string) => {
+    try {
+      setIsCallInProgress(true);
+      const response = await supabase.functions.invoke('trigger-call', {
+        body: { leadId }
+      });
       
-      if (pendingLeads.length === 0) {
-        toast.error("No pending leads to process");
-        return;
+      if (response.error) {
+        toast.error(`Failed to initiate call: ${response.error.message}`);
+        console.error("Error initiating call:", response.error);
+      } else if (response.data.success) {
+        toast.success("Call initiated successfully");
+      } else {
+        toast.error(response.data.message || "Failed to initiate call");
       }
       
-      setIsExecuting(true);
-      toast.success(`Started processing ${pendingLeads.length} leads`);
-      
-      // In a real implementation, this would start making calls using the assigned phone IDs
-      // For now, we'll just simulate by changing statuses after a delay
-      
-    } else {
-      // Stopping execution
-      setIsExecuting(false);
-      toast.info("Stopped execution");
+      fetchLeads(); // Refresh leads to get updated status
+    } catch (err) {
+      console.error("Error triggering call:", err);
+      toast.error("Failed to initiate call");
+    } finally {
+      setIsCallInProgress(false);
     }
+  };
+
+  const startExecution = () => {
+    const pendingLeads = leads.filter(lead => lead.status === 'Pending' && lead.phone_id !== null);
+    
+    if (pendingLeads.length === 0) {
+      toast.error("No pending leads to process");
+      return;
+    }
+    
+    setIsExecuting(true);
+    toast.success(`Started processing ${pendingLeads.length} leads`);
+    
+    // Get pacing interval in milliseconds
+    const pacingInterval = (1 / parseInt(selectedPacing, 10)) * 1000;
+    setCurrentLeadIndex(0);
+    
+    // Start the interval to process leads based on pacing
+    const id = setInterval(() => {
+      setCurrentLeadIndex(prevIndex => {
+        if (prevIndex >= pendingLeads.length - 1) {
+          // We've processed all leads, stop the interval
+          clearInterval(id);
+          setIntervalId(null);
+          setIsExecuting(false);
+          toast.success("Finished processing all leads");
+          return -1;
+        }
+        
+        // Trigger the call for the current lead
+        if (!isCallInProgress) {
+          triggerCall(pendingLeads[prevIndex].id);
+        }
+        
+        // Move to the next lead
+        return prevIndex + 1;
+      });
+    }, pacingInterval);
+    
+    setIntervalId(id);
+  };
+
+  const stopExecution = () => {
+    if (intervalId !== null) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+    }
+    setIsExecuting(false);
+    toast.info("Stopped execution");
+  };
+
+  const toggleExecution = async () => {
+    if (!isExecuting) {
+      startExecution();
+    } else {
+      stopExecution();
+    }
+  };
+
+  const triggerSingleCall = async (leadId: string) => {
+    if (isCallInProgress) {
+      toast.info("A call is already in progress, please wait");
+      return;
+    }
+    
+    await triggerCall(leadId);
+    fetchLeads();
   };
 
   return (
@@ -280,6 +361,7 @@ const Dashboard: FC = () => {
               <Select 
                 value={selectedPacing} 
                 onValueChange={setSelectedPacing}
+                disabled={isExecuting}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select pacing" />
@@ -302,9 +384,19 @@ const Dashboard: FC = () => {
             <Button 
               className={`${isExecuting ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"} w-full`} 
               onClick={toggleExecution}
+              disabled={isCallInProgress}
             >
-              <Play className="h-4 w-4 mr-2" />
-              {isExecuting ? "Stop Execution" : "Start Execution"}
+              {isExecuting ? (
+                <>
+                  <Pause className="h-4 w-4 mr-2" />
+                  Stop Execution
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Start Execution
+                </>
+              )}
             </Button>
             <p className="text-xs text-muted-foreground">Upload a CSV file and click Start to begin calling</p>
           </div>
@@ -326,6 +418,7 @@ const Dashboard: FC = () => {
                   <TableHead>Disposition</TableHead>
                   <TableHead>Duration (min)</TableHead>
                   <TableHead>Cost</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -336,13 +429,25 @@ const Dashboard: FC = () => {
                       <TableCell>{lead.phone_number}</TableCell>
                       <TableCell>{lead.status}</TableCell>
                       <TableCell>{lead.disposition || '-'}</TableCell>
-                      <TableCell>{lead.duration.toFixed(1)}</TableCell>
-                      <TableCell>${lead.cost.toFixed(2)}</TableCell>
+                      <TableCell>{lead.duration?.toFixed(1) || '0.0'}</TableCell>
+                      <TableCell>${lead.cost?.toFixed(2) || '0.00'}</TableCell>
+                      <TableCell>
+                        {lead.status === 'Pending' && lead.phone_id && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => triggerSingleCall(lead.id)}
+                            disabled={isCallInProgress}
+                          >
+                            <Phone className="h-4 w-4 mr-1" /> Call
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow className="h-[100px]">
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No leads found. Upload a CSV file to get started.
                     </TableCell>
                   </TableRow>
