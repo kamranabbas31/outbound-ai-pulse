@@ -200,6 +200,7 @@ const Dashboard: FC = () => {
   };
 
   const startExecution = () => {
+    // Get only pending leads with valid phone IDs
     const pendingLeads = leads.filter(lead => lead.status === 'Pending' && lead.phone_id !== null);
     
     if (pendingLeads.length === 0) {
@@ -217,6 +218,17 @@ const Dashboard: FC = () => {
     // Start the interval to process leads based on pacing
     const id = setInterval(() => {
       setCurrentLeadIndex(prevIndex => {
+        // Safety check: make sure we have pending leads
+        if (pendingLeads.length === 0) {
+          if (intervalId !== null) {
+            clearInterval(intervalId);
+            setIntervalId(null);
+            setIsExecuting(false);
+            toast.error("No leads to process");
+          }
+          return -1;
+        }
+        
         if (prevIndex >= pendingLeads.length - 1) {
           // We've processed all leads, stop the interval
           if (intervalId !== null) {
@@ -228,9 +240,12 @@ const Dashboard: FC = () => {
           return -1;
         }
         
-        // Trigger the call for the current lead
-        if (!isCallInProgress) {
-          triggerCall(pendingLeads[prevIndex].id);
+        // Make sure we have a valid lead at this index
+        const currentLead = pendingLeads[prevIndex];
+        
+        // Check if the current lead is valid before triggering the call
+        if (currentLead && currentLead.id && !isCallInProgress) {
+          triggerCall(currentLead.id);
         }
         
         // Move to the next lead
