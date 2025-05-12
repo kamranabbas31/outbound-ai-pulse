@@ -1,5 +1,5 @@
 import { FC, useState, useEffect } from "react";
-import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause } from "lucide-react";
+import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search } from "lucide-react";
 import { toast } from "sonner";
 import StatCard from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,8 @@ const Dashboard: FC = () => {
   const [campaignName, setCampaignName] = useState("");
   const [lastUploadedFileName, setLastUploadedFileName] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
 
   // Check if campaign is completed
   useEffect(() => {
@@ -120,6 +122,7 @@ const Dashboard: FC = () => {
     }
     
     setLeads(data || []);
+    setFilteredLeads(data || []);
     
     // Update stats
     const completed = data?.filter(lead => lead.status === 'Completed').length || 0;
@@ -399,6 +402,29 @@ const Dashboard: FC = () => {
     }
   };
 
+  // Add a function to handle search
+  const handleSearch = () => {
+    if (!searchTerm.trim()) {
+      setFilteredLeads(leads);
+      return;
+    }
+    
+    const filtered = leads.filter(lead => 
+      lead.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      lead.phone_number.includes(searchTerm) ||
+      lead.status.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (lead.disposition && lead.disposition.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+    
+    setFilteredLeads(filtered);
+    
+    if (filtered.length === 0) {
+      toast.info("No matching leads found");
+    } else {
+      toast.success(`Found ${filtered.length} matching leads`);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col space-y-2">
@@ -543,7 +569,30 @@ const Dashboard: FC = () => {
 
       <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
         <div className="p-6 border-b">
-          <h3 className="text-lg font-semibold">Call Log</h3>
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold">Call Log</h3>
+            <div className="flex space-x-2">
+              <Input
+                placeholder="Search leads..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-64"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSearch();
+                  }
+                }}
+              />
+              <Button 
+                variant="outline" 
+                onClick={handleSearch}
+                className="flex items-center space-x-2"
+              >
+                <Search className="h-4 w-4" />
+                <span>Search</span>
+              </Button>
+            </div>
+          </div>
         </div>
         <div className="p-4">
           <div className="relative w-full overflow-auto">
@@ -560,8 +609,8 @@ const Dashboard: FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {leads.length > 0 ? (
-                  leads.map((lead) => (
+                {filteredLeads.length > 0 ? (
+                  filteredLeads.map((lead) => (
                     <TableRow key={lead.id}>
                       <TableCell>{lead.name}</TableCell>
                       <TableCell>{lead.phone_number}</TableCell>
@@ -586,7 +635,7 @@ const Dashboard: FC = () => {
                 ) : (
                   <TableRow className="h-[100px]">
                     <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      No leads found. Upload a CSV file to get started.
+                      {searchTerm ? "No matching leads found." : "No leads found. Upload a CSV file to get started."}
                     </TableCell>
                   </TableRow>
                 )}
