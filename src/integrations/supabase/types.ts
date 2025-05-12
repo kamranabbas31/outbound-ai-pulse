@@ -9,6 +9,87 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      campaign_leads: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          id: string
+          lead_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          id?: string
+          lead_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          id?: string
+          lead_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_leads_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_leads_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          completed: number
+          cost: number
+          created_at: string
+          duration: number
+          failed: number
+          file_name: string | null
+          id: string
+          in_progress: number
+          leads_count: number
+          name: string
+          remaining: number
+          status: string
+        }
+        Insert: {
+          completed?: number
+          cost?: number
+          created_at?: string
+          duration?: number
+          failed?: number
+          file_name?: string | null
+          id?: string
+          in_progress?: number
+          leads_count?: number
+          name: string
+          remaining?: number
+          status?: string
+        }
+        Update: {
+          completed?: number
+          cost?: number
+          created_at?: string
+          duration?: number
+          failed?: number
+          file_name?: string | null
+          id?: string
+          in_progress?: number
+          leads_count?: number
+          name?: string
+          remaining?: number
+          status?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           cost: number | null

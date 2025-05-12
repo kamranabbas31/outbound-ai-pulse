@@ -1,3 +1,4 @@
+
 import { FC, useState, useEffect } from "react";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause } from "lucide-react";
 import { toast } from "sonner";
@@ -7,6 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { parseCSV } from "@/utils/csvParser";
 import { supabase } from "@/integrations/supabase/client";
+import { createCampaign, resetLeads } from "@/services/campaignService";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface Lead {
   id: string;
@@ -34,8 +39,10 @@ const Dashboard: FC = () => {
     totalCost: 0,
   });
   const [currentLeadIndex, setCurrentLeadIndex] = useState(-1);
-  // Changed from number to NodeJS.Timeout | null to match setTimeout return type
   const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
+  const [showNewCampaignDialog, setShowNewCampaignDialog] = useState(false);
+  const [campaignName, setCampaignName] = useState("");
+  const [lastUploadedFileName, setLastUploadedFileName] = useState<string | null>(null);
 
   // Fetch leads on component mount
   useEffect(() => {
@@ -99,6 +106,8 @@ const Dashboard: FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     
+    // Store the file name for campaign creation
+    setLastUploadedFileName(file.name);
     setIsUploading(true);
     
     try {
@@ -283,6 +292,39 @@ const Dashboard: FC = () => {
     fetchLeads();
   };
 
+  const handleNewCampaign = () => {
+    // Show the dialog to name the campaign
+    setShowNewCampaignDialog(true);
+    
+    // Pre-fill the campaign name with the last uploaded file name (if any)
+    if (lastUploadedFileName) {
+      setCampaignName(lastUploadedFileName.replace('.csv', ''));
+    } else {
+      setCampaignName(`Campaign ${new Date().toLocaleDateString()}`);
+    }
+  };
+
+  const handleCreateNewCampaign = async () => {
+    // First, make sure current leads are saved as a campaign
+    const fileName = lastUploadedFileName || null;
+    
+    // Create a campaign with current leads data
+    const campaign = await createCampaign(fileName);
+    
+    if (campaign) {
+      // Reset the leads table
+      const resetSuccess = await resetLeads();
+      
+      if (resetSuccess) {
+        toast.success("Campaign created and dashboard reset");
+        fetchLeads(); // Refresh the leads list (should be empty now)
+        setShowNewCampaignDialog(false);
+        // Reset the uploaded file name
+        setLastUploadedFileName(null);
+      }
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col space-y-2">
@@ -292,7 +334,7 @@ const Dashboard: FC = () => {
             <h2 className="text-2xl font-bold text-gray-800 mt-4">Dashboard</h2>
             <p className="text-muted-foreground">Manage and monitor your AI outbound calling campaigns.</p>
           </div>
-          <Button className="bg-primary">+ New Campaign</Button>
+          <Button className="bg-primary" onClick={handleNewCampaign}>+ New Campaign</Button>
         </div>
       </div>
 
@@ -474,6 +516,33 @@ const Dashboard: FC = () => {
           </div>
         </div>
       </div>
+
+      {/* New Campaign Dialog */}
+      <Dialog open={showNewCampaignDialog} onOpenChange={setShowNewCampaignDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Campaign</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="campaign-name">Campaign Name</Label>
+              <Input 
+                id="campaign-name" 
+                value={campaignName} 
+                onChange={(e) => setCampaignName(e.target.value)}
+                placeholder="Enter campaign name"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This will save your current leads as a campaign and reset the dashboard.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewCampaignDialog(false)}>Cancel</Button>
+            <Button onClick={handleCreateNewCampaign}>Create & Reset</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -1,93 +1,70 @@
 
-import { FC } from "react";
+import { FC, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { fetchCampaigns } from "@/services/campaignService";
+import { toast } from "sonner";
+
+interface Campaign {
+  id: string;
+  name: string;
+  file_name: string | null;
+  status: string;
+  leads_count: number;
+  completed: number;
+  in_progress: number;
+  remaining: number;
+  failed: number;
+  duration: number;
+  cost: number;
+  created_at: string;
+}
 
 const Campaigns: FC = () => {
-  // Mock data based on the screenshot
-  const campaigns = [
-    {
-      id: 1,
-      name: "AI-Caller ConversionMediaGroup - Sheet12 (11)",
-      fileName: "AI-Caller ConversionMediaGroup - Sheet12 (11).csv",
-      status: "in-progress",
-      leads: 14,
-      completed: 0,
-      inProgress: 1,
-      remaining: 13,
-      failed: 0,
-      duration: 0.0,
-      cost: "$0.00",
-      dateCreated: "May 13, 2025",
-    },
-    {
-      id: 2,
-      name: "AI-Caller ConversionMediaGroup - Sheet12 (11)",
-      fileName: "AI-Caller ConversionMediaGroup - Sheet12 (11).csv",
-      status: "in-progress",
-      leads: 14,
-      completed: 0,
-      inProgress: 1,
-      remaining: 13,
-      failed: 0,
-      duration: 0.0,
-      cost: "$0.00",
-      dateCreated: "May 12, 2025",
-    },
-    {
-      id: 3,
-      name: "AI-Caller ConversionMediaGroup - Sheet12 (10)",
-      fileName: "AI-Caller ConversionMediaGroup - Sheet12 (10).csv",
-      status: "stopped",
-      leads: 14,
-      completed: 0,
-      inProgress: 1,
-      remaining: 13,
-      failed: 0,
-      duration: 0.0,
-      cost: "$0.00",
-      dateCreated: "May 12, 2025",
-    },
-    {
-      id: 4,
-      name: "AI-Caller ConversionMediaGroup - Sheet12 (10)",
-      fileName: "AI-Caller ConversionMediaGroup - Sheet12 (10).csv",
-      status: "in-progress",
-      leads: 14,
-      completed: 0,
-      inProgress: 1,
-      remaining: 13,
-      failed: 0,
-      duration: 0.0,
-      cost: "$0.00",
-      dateCreated: "May 12, 2025",
-    },
-    {
-      id: 5,
-      name: "AI-Caller ConversionMediaGroup - Sheet12 (9)",
-      fileName: "AI-Caller ConversionMediaGroup - Sheet12 (9).csv",
-      status: "in-progress",
-      leads: 4,
-      completed: 1,
-      inProgress: 1,
-      remaining: 2,
-      failed: 0,
-      duration: 1.0,
-      cost: "$0.99",
-      dateCreated: "May 12, 2025",
-    },
-  ];
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadCampaigns();
+  }, []);
+
+  const loadCampaigns = async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchCampaigns();
+      setCampaigns(data);
+    } catch (error) {
+      console.error("Error loading campaigns:", error);
+      toast.error("Failed to load campaigns");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "in-progress":
         return <Badge className="bg-blue-500 hover:bg-blue-600">In Progress</Badge>;
+      case "completed":
+        return <Badge className="bg-green-500 hover:bg-green-600">Completed</Badge>;
       case "stopped":
         return <Badge variant="outline" className="text-gray-500 border-gray-300">Stopped</Badge>;
       case "paused":
         return <Badge variant="outline" className="text-amber-500 border-amber-300">Paused</Badge>;
+      case "pending":
+        return <Badge variant="outline" className="text-purple-500 border-purple-300">Pending</Badge>;
+      case "partial":
+        return <Badge className="bg-amber-500 hover:bg-amber-600">Partial</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
   };
 
   return (
@@ -121,21 +98,35 @@ const Campaigns: FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {campaigns.map((campaign) => (
-                  <tr key={campaign.id} className="border-b">
-                    <td className="p-4 align-middle">{campaign.name}</td>
-                    <td className="p-4 align-middle">{campaign.fileName}</td>
-                    <td className="p-4 align-middle">{getStatusBadge(campaign.status)}</td>
-                    <td className="p-4 align-middle">{campaign.leads}</td>
-                    <td className="p-4 align-middle">{campaign.completed}</td>
-                    <td className="p-4 align-middle">{campaign.inProgress}</td>
-                    <td className="p-4 align-middle">{campaign.remaining}</td>
-                    <td className="p-4 align-middle">{campaign.failed}</td>
-                    <td className="p-4 align-middle">{campaign.duration}</td>
-                    <td className="p-4 align-middle">{campaign.cost}</td>
-                    <td className="p-4 align-middle">{campaign.dateCreated}</td>
+                {isLoading ? (
+                  <tr className="h-[100px]">
+                    <td colSpan={11} className="text-center text-muted-foreground">
+                      Loading campaigns...
+                    </td>
                   </tr>
-                ))}
+                ) : campaigns.length > 0 ? (
+                  campaigns.map((campaign) => (
+                    <tr key={campaign.id} className="border-b">
+                      <td className="p-4 align-middle">{campaign.name}</td>
+                      <td className="p-4 align-middle">{campaign.file_name || '-'}</td>
+                      <td className="p-4 align-middle">{getStatusBadge(campaign.status)}</td>
+                      <td className="p-4 align-middle">{campaign.leads_count}</td>
+                      <td className="p-4 align-middle">{campaign.completed}</td>
+                      <td className="p-4 align-middle">{campaign.in_progress}</td>
+                      <td className="p-4 align-middle">{campaign.remaining}</td>
+                      <td className="p-4 align-middle">{campaign.failed}</td>
+                      <td className="p-4 align-middle">{campaign.duration.toFixed(1)}</td>
+                      <td className="p-4 align-middle">${campaign.cost.toFixed(2)}</td>
+                      <td className="p-4 align-middle">{formatDate(campaign.created_at)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr className="h-[100px]">
+                    <td colSpan={11} className="text-center text-muted-foreground">
+                      No campaigns found. Create a new campaign to get started.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
