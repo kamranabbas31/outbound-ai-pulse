@@ -9,24 +9,35 @@ import Dashboard from "./pages/Dashboard";
 import Campaigns from "./pages/Campaigns";
 import Billing from "./pages/Billing";
 import NotFound from "./pages/NotFound";
+import { StrictMode } from "react";
 
-const queryClient = new QueryClient();
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout><Dashboard /></Layout>} />
-          <Route path="/campaigns" element={<Layout><Campaigns /></Layout>} />
-          <Route path="/billing" element={<Layout><Billing /></Layout>} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <BrowserRouter>
+          <Toaster />
+          <Sonner />
+          <Routes>
+            <Route path="/" element={<Layout><Dashboard /></Layout>} />
+            <Route path="/campaigns" element={<Layout><Campaigns /></Layout>} />
+            <Route path="/billing" element={<Layout><Billing /></Layout>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </StrictMode>
 );
 
 export default App;
