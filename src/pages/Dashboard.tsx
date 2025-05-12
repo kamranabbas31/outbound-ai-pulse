@@ -1,4 +1,3 @@
-
 import { FC, useState, useEffect } from "react";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause } from "lucide-react";
 import { toast } from "sonner";
@@ -44,6 +43,27 @@ const Dashboard: FC = () => {
   const [campaignName, setCampaignName] = useState("");
   const [lastUploadedFileName, setLastUploadedFileName] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+
+  // Check if campaign is completed
+  useEffect(() => {
+    // Only run this check if we have leads and we're executing a campaign
+    if (leads.length > 0 && isExecuting) {
+      const pendingLeads = leads.filter(lead => lead.status === 'Pending' && lead.phone_id !== null);
+      const inProgressLeads = leads.filter(lead => lead.status === 'In Progress');
+      
+      // If there are no pending or in-progress leads left, the campaign is finished
+      if (pendingLeads.length === 0 && inProgressLeads.length === 0 && stats.completed > 0) {
+        // Stop the execution
+        stopExecution();
+        
+        // Show a toast notification
+        toast.success("Campaign Finished!", {
+          description: `Successfully completed ${stats.completed} calls with ${stats.failed} failures.`,
+          duration: 5000,
+        });
+      }
+    }
+  }, [leads, isExecuting, stats.completed, stats.failed]);
 
   // Fetch leads on component mount and set up refresh interval
   useEffect(() => {
@@ -281,13 +301,8 @@ const Dashboard: FC = () => {
         }
         
         if (prevIndex >= pendingLeads.length - 1) {
-          // We've processed all leads, stop the interval
-          if (intervalId !== null) {
-            clearInterval(intervalId);
-            setIntervalId(null);
-            setIsExecuting(false);
-            toast.success("Finished processing all leads");
-          }
+          // We've processed all leads, but don't stop the interval yet
+          // as we want to let the actual calls complete
           return -1;
         }
         
