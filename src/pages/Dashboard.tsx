@@ -1,18 +1,129 @@
 
-import { FC, useState } from "react";
+import { FC, useState, useEffect } from "react";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play } from "lucide-react";
+import { toast } from "sonner";
 import StatCard from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { parseCSV } from "@/utils/csvParser";
+import { supabase } from "@/integrations/supabase/client";
+
+interface Lead {
+  id: string;
+  name: string;
+  phone_number: string;
+  phone_id: string | null;
+  status: string;
+  disposition: string | null;
+  duration: number;
+  cost: number;
+}
 
 const Dashboard: FC = () => {
   const [selectedPacing, setSelectedPacing] = useState("1");
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [stats, setStats] = useState({
+    completed: 0,
+    inProgress: 0,
+    remaining: 0,
+    failed: 0,
+    totalDuration: 0,
+    totalCost: 0,
+  });
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // This will be implemented in the backend
-    console.log("File uploaded:", e.target.files?.[0]);
+  // Fetch leads on component mount
+  useEffect(() => {
+    fetchLeads();
+  }, []);
+
+  const fetchLeads = async () => {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (error) {
+      console.error("Error fetching leads:", error);
+      toast.error("Failed to fetch leads");
+      return;
+    }
+    
+    setLeads(data || []);
+    
+    // Update stats
+    const completed = data?.filter(lead => lead.status === 'Completed').length || 0;
+    const inProgress = data?.filter(lead => lead.status === 'In Progress').length || 0;
+    const failed = data?.filter(lead => lead.status === 'Failed').length || 0;
+    const remaining = data?.filter(lead => lead.status === 'Pending').length || 0;
+    const totalDuration = data?.reduce((sum, lead) => sum + (lead.duration || 0), 0) || 0;
+    const totalCost = data?.reduce((sum, lead) => sum + (lead.cost || 0), 0) || 0;
+    
+    setStats({
+      completed,
+      inProgress,
+      remaining,
+      failed,
+      totalDuration,
+      totalCost,
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploading(true);
+    
+    try {
+      // Read the file
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const content = event.target?.result as string;
+          const parsedLeads = parseCSV(content);
+          
+          if (parsedLeads.length === 0) {
+            toast.error("No valid leads found in the CSV");
+            setIsUploading(false);
+            return;
+          }
+          
+          // Insert leads into the database
+          for (const lead of parsedLeads) {
+            const { error } = await supabase.from('leads').insert({
+              name: lead.name,
+              phone_number: lead.phoneNumber,
+              status: 'Pending'
+            });
+            
+            if (error) {
+              console.error("Error inserting lead:", error);
+              toast.error(`Failed to insert lead: ${lead.name}`);
+            }
+          }
+          
+          toast.success(`Successfully uploaded ${parsedLeads.length} leads`);
+          fetchLeads(); // Refresh the leads list
+        } catch (err) {
+          console.error("Error parsing CSV:", err);
+          toast.error("Failed to parse CSV file. Make sure it has Name and Phone columns.");
+        }
+        
+        setIsUploading(false);
+      };
+      
+      reader.readAsText(file);
+    } catch (err) {
+      console.error("Error reading file:", err);
+      toast.error("Failed to read file");
+      setIsUploading(false);
+    }
+    
+    // Reset the file input
+    e.target.value = '';
   };
 
   const toggleExecution = () => {
@@ -35,21 +146,21 @@ const Dashboard: FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard
           title="Completed Calls"
-          value="0"
+          value={stats.completed.toString()}
           description="Successfully completed"
           icon={<Check className="h-5 w-5 text-green-500" />}
           variant="success"
         />
         <StatCard
           title="In Progress"
-          value="0"
+          value={stats.inProgress.toString()}
           description="Currently active"
           icon={<Clock className="h-5 w-5 text-blue-500" />}
           variant="info"
         />
         <StatCard
           title="Remaining Calls"
-          value="0"
+          value={stats.remaining.toString()}
           description="Waiting to be made"
           icon={<Phone className="h-5 w-5 text-gray-500" />}
         />
@@ -58,21 +169,21 @@ const Dashboard: FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard
           title="Failed Calls"
-          value="0"
+          value={stats.failed.toString()}
           description="Failed attempts"
           icon={<AlertCircle className="h-5 w-5 text-red-500" />}
           variant="error"
         />
         <StatCard
           title="Total Duration"
-          value="0.0 min"
+          value={`${stats.totalDuration.toFixed(1)} min`}
           description="Call duration"
           icon={<Clock3 className="h-5 w-5 text-purple-500" />}
           variant="purple"
         />
         <StatCard
           title="Total Cost"
-          value="$0.00"
+          value={`$${stats.totalCost.toFixed(2)}`}
           description="@ $0.99 per minute"
           icon={<DollarSign className="h-5 w-5 text-orange-500" />}
           variant="orange"
@@ -84,9 +195,14 @@ const Dashboard: FC = () => {
           <h3 className="text-lg font-semibold mb-2">File Upload</h3>
           <p className="text-sm text-muted-foreground mb-4">Upload a CSV file with lead data</p>
           <div className="flex flex-col space-y-4">
-            <Button className="flex items-center space-x-2" variant="outline" onClick={() => document.getElementById('file-upload')?.click()}>
+            <Button 
+              className="flex items-center space-x-2" 
+              variant="outline" 
+              onClick={() => document.getElementById('file-upload')?.click()}
+              disabled={isUploading}
+            >
               <FileUp className="h-4 w-4" />
-              <span>Upload CSV</span>
+              <span>{isUploading ? "Uploading..." : "Upload CSV"}</span>
             </Button>
             <input 
               id="file-upload" 
@@ -94,6 +210,7 @@ const Dashboard: FC = () => {
               accept=".csv" 
               className="hidden" 
               onChange={handleFileUpload} 
+              disabled={isUploading}
             />
             <p className="text-xs text-muted-foreground">CSV must include columns for Lead Name and Phone Number</p>
           </div>
@@ -127,7 +244,10 @@ const Dashboard: FC = () => {
           <h3 className="text-lg font-semibold mb-2">Call Execution</h3>
           <p className="text-sm text-muted-foreground mb-4">Control the calling queue</p>
           <div className="flex flex-col space-y-4">
-            <Button className="bg-green-500 hover:bg-green-600 w-full" onClick={toggleExecution}>
+            <Button 
+              className={`${isExecuting ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"} w-full`} 
+              onClick={toggleExecution}
+            >
               <Play className="h-4 w-4 mr-2" />
               {isExecuting ? "Stop Execution" : "Start Execution"}
             </Button>
@@ -142,25 +262,38 @@ const Dashboard: FC = () => {
         </div>
         <div className="p-4">
           <div className="relative w-full overflow-auto">
-            <table className="w-full caption-bottom text-sm">
-              <thead className="[&_tr]:border-b">
-                <tr className="border-b">
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Lead Name</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Phone Number</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Disposition</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Duration (min)</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Cost</th>
-                </tr>
-              </thead>
-              <tbody className="[&_tr:last-child]:border-0">
-                <tr className="h-[100px] border-t">
-                  <td colSpan={6} className="p-4 align-middle text-center text-muted-foreground">
-                    No campaign selected. Please select a campaign to view its calls.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lead Name</TableHead>
+                  <TableHead>Phone Number</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Disposition</TableHead>
+                  <TableHead>Duration (min)</TableHead>
+                  <TableHead>Cost</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leads.length > 0 ? (
+                  leads.map((lead) => (
+                    <TableRow key={lead.id}>
+                      <TableCell>{lead.name}</TableCell>
+                      <TableCell>{lead.phone_number}</TableCell>
+                      <TableCell>{lead.status}</TableCell>
+                      <TableCell>{lead.disposition || '-'}</TableCell>
+                      <TableCell>{lead.duration.toFixed(1)}</TableCell>
+                      <TableCell>${lead.cost.toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow className="h-[100px]">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      No leads found. Upload a CSV file to get started.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         </div>
       </div>
