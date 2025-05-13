@@ -1,8 +1,8 @@
-
 import { FC, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { fetchCampaigns } from "@/services/campaignService";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 interface Campaign {
   id: string;
@@ -22,6 +22,7 @@ interface Campaign {
 const Campaigns: FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadCampaigns();
@@ -67,6 +68,10 @@ const Campaigns: FC = () => {
     });
   };
 
+  const handleCampaignClick = (campaignId: string) => {
+    navigate(`/?campaignId=${campaignId}`);
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col space-y-2">
@@ -106,7 +111,11 @@ const Campaigns: FC = () => {
                   </tr>
                 ) : campaigns.length > 0 ? (
                   campaigns.map((campaign) => (
-                    <tr key={campaign.id} className="border-b">
+                    <tr 
+                      key={campaign.id} 
+                      className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
+                      onClick={() => handleCampaignClick(campaign.id)}
+                    >
                       <td className="p-4 align-middle">{campaign.name}</td>
                       <td className="p-4 align-middle">{campaign.file_name || '-'}</td>
                       <td className="p-4 align-middle">{getStatusBadge(campaign.status)}</td>

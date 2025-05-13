@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -129,5 +128,46 @@ export const resetLeads = async () => {
     console.error("Error in resetLeads:", err);
     toast.error("Failed to reset leads table");
     return false;
+  }
+};
+
+// Add a new function to fetch a specific campaign's details
+export const fetchCampaignById = async (campaignId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('id', campaignId)
+      .single();
+      
+    if (error) {
+      console.error("Error fetching campaign:", error);
+      throw new Error(error.message);
+    }
+    
+    return data;
+  } catch (err) {
+    console.error("Error in fetchCampaignById:", err);
+    throw err;
+  }
+};
+
+// Add a new function to fetch leads for a specific campaign
+export const fetchCampaignLeads = async (campaignId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('campaign_leads')
+      .select('*')
+      .eq('campaign_id', campaignId);
+      
+    if (error) {
+      console.error("Error fetching campaign leads:", error);
+      throw new Error(error.message);
+    }
+    
+    return data || [];
+  } catch (err) {
+    console.error("Error in fetchCampaignLeads:", err);
+    throw err;
   }
 };

@@ -1,5 +1,5 @@
-
 import { FC, useState, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import StatCard from "@/components/StatCard";
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { parseCSV } from "@/utils/csvParser";
 import { supabase } from "@/integrations/supabase/client";
-import { createCampaign, resetLeads } from "@/services/campaignService";
+import { createCampaign, resetLeads, fetchCampaignById, fetchCampaignLeads } from "@/services/campaignService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,9 +22,14 @@ interface Lead {
   disposition: string | null;
   duration: number;
   cost: number;
+  campaign_id?: string;
 }
 
 const Dashboard: FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const campaignId = searchParams.get('campaignId');
+  
   const [selectedPacing, setSelectedPacing] = useState("1");
   const [isExecuting, setIsExecuting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -47,6 +52,66 @@ const Dashboard: FC = () => {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [isSearchActive, setIsSearchActive] = useState(false);
+  const [activeCampaign, setActiveCampaign] = useState<any>(null);
+  const [isViewingCampaign, setIsViewingCampaign] = useState(false);
+
+  // Load campaign data if campaignId is present in URL
+  useEffect(() => {
+    if (campaignId) {
+      loadCampaignData(campaignId);
+    } else {
+      // Reset to normal dashboard mode if no campaignId
+      setIsViewingCampaign(false);
+      fetchLeads();
+    }
+    
+    return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [campaignId]);
+
+  // Fetch leads on component mount and set up refresh interval
+  useEffect(() => {
+    if (!campaignId) {
+      fetchLeads();
+      
+      // Set up a refresh interval to update leads every 5 seconds
+      const interval = setInterval(() => {
+        if (!isViewingCampaign) {
+          fetchLeads();
+        }
+      }, 5000);
+      
+      setRefreshInterval(interval);
+    }
+  }, [isViewingCampaign, campaignId]);
+
+  // Setup subscription to leads table changes
+  useEffect(() => {
+    if (!isViewingCampaign) {
+      const subscription = supabase
+        .channel('public:leads')
+        .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
+          table: 'leads' 
+        }, payload => {
+          console.log('Change received:', payload);
+          fetchLeads(); // Refresh leads when changes occur
+        })
+        .subscribe();
+        
+      return () => {
+        supabase.removeChannel(subscription);
+      };
+    }
+  }, [isViewingCampaign]);
 
   // Check if campaign is completed
   useEffect(() => {
@@ -69,49 +134,58 @@ const Dashboard: FC = () => {
     }
   }, [leads, isExecuting, stats.completed, stats.failed]);
 
-  // Fetch leads on component mount and set up refresh interval
-  useEffect(() => {
-    fetchLeads();
-    
-    // Set up a refresh interval to update leads every 5 seconds
-    const interval = setInterval(() => {
-      fetchLeads();
-    }, 5000);
-    
-    setRefreshInterval(interval);
-    
-    // Cleanup interval on unmount
-    return () => {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-      }
+  const loadCampaignData = async (id: string) => {
+    try {
+      setIsViewingCampaign(true);
       
-      if (intervalId !== null) {
-        clearInterval(intervalId);
-      }
-    };
-  }, []);
+      // Fetch campaign details
+      const campaign = await fetchCampaignById(id);
+      setActiveCampaign(campaign);
+      
+      // Update the stats from the campaign data
+      setStats({
+        completed: campaign.completed || 0,
+        inProgress: campaign.in_progress || 0,
+        remaining: campaign.remaining || 0,
+        failed: campaign.failed || 0,
+        totalDuration: campaign.duration || 0,
+        totalCost: campaign.cost || 0,
+      });
+      
+      // Fetch leads for this campaign
+      const campaignLeads = await fetchCampaignLeads(id);
+      setLeads(campaignLeads);
+      setFilteredLeads(campaignLeads);
+      
+      // Set campaign name
+      setCampaignName(campaign.name || "");
+      
+      // Update document title
+      document.title = `${campaign.name || "Campaign"} - Call Manager`;
+      
+      toast.success(`Loaded campaign: ${campaign.name}`);
+    } catch (error) {
+      console.error("Error loading campaign data:", error);
+      toast.error("Failed to load campaign data");
+      
+      // Go back to default dashboard view if there's an error
+      clearCampaignView();
+    }
+  };
 
-  // Setup subscription to leads table changes
-  useEffect(() => {
-    const subscription = supabase
-      .channel('public:leads')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'leads' 
-      }, payload => {
-        console.log('Change received:', payload);
-        fetchLeads(); // Refresh leads when changes occur
-      })
-      .subscribe();
-      
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, []);
+  const clearCampaignView = () => {
+    // Clear the campaignId from URL without full page reload
+    navigate('/', { replace: true });
+    setIsViewingCampaign(false);
+    setActiveCampaign(null);
+    document.title = "Dashboard - Call Manager";
+    fetchLeads();
+  };
 
   const fetchLeads = async () => {
+    // Skip if we're viewing a campaign, as we don't want to load the active leads
+    if (isViewingCampaign) return;
+    
     const { data, error } = await supabase
       .from('leads')
       .select('*')
@@ -477,14 +551,38 @@ const Dashboard: FC = () => {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-primary">Call Manager</h1>
-            <h2 className="text-2xl font-bold text-gray-800 mt-4">Dashboard</h2>
-            <p className="text-muted-foreground">Manage and monitor your AI outbound calling campaigns.</p>
+            {isViewingCampaign && activeCampaign ? (
+              <>
+                <div className="flex items-center mt-4 space-x-2">
+                  <h2 className="text-2xl font-bold text-gray-800">Campaign: {activeCampaign.name}</h2>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={clearCampaignView}
+                  >
+                    Back to Dashboard
+                  </Button>
+                </div>
+                <p className="text-muted-foreground">
+                  Viewing historical campaign data from {new Date(activeCampaign.created_at).toLocaleDateString()}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl font-bold text-gray-800 mt-4">Dashboard</h2>
+                <p className="text-muted-foreground">Manage and monitor your AI outbound calling campaigns.</p>
+              </>
+            )}
           </div>
           <div className="flex items-center space-x-4">
-            <Button variant="outline" onClick={fetchLeads}>
-              Refresh Data
-            </Button>
-            <Button className="bg-primary" onClick={handleNewCampaign}>+ New Campaign</Button>
+            {!isViewingCampaign && (
+              <>
+                <Button variant="outline" onClick={fetchLeads}>
+                  Refresh Data
+                </Button>
+                <Button className="bg-primary" onClick={handleNewCampaign}>+ New Campaign</Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -536,87 +634,91 @@ const Dashboard: FC = () => {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="p-6 bg-white shadow-sm rounded-lg border">
-          <h3 className="text-lg font-semibold mb-2">File Upload</h3>
-          <p className="text-sm text-muted-foreground mb-4">Upload a CSV file with lead data</p>
-          <div className="flex flex-col space-y-4">
-            <Button 
-              className="flex items-center space-x-2" 
-              variant="outline" 
-              onClick={() => document.getElementById('file-upload')?.click()}
-              disabled={isUploading}
-            >
-              <FileUp className="h-4 w-4" />
-              <span>{isUploading ? "Uploading..." : "Upload CSV"}</span>
-            </Button>
-            <input 
-              id="file-upload" 
-              type="file" 
-              accept=".csv" 
-              className="hidden" 
-              onChange={handleFileUpload} 
-              disabled={isUploading}
-            />
-            <p className="text-xs text-muted-foreground">CSV must include columns for Lead Name and Phone Number</p>
-          </div>
-        </div>
-
-        <div className="p-6 bg-white shadow-sm rounded-lg border">
-          <h3 className="text-lg font-semibold mb-2">Pacing Controls</h3>
-          <p className="text-sm text-muted-foreground mb-4">Set the rate of outbound calls</p>
-          <div className="flex flex-col space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Call Pacing (calls/sec)</label>
-              <Select 
-                value={selectedPacing} 
-                onValueChange={setSelectedPacing}
-                disabled={isExecuting}
+      {!isViewingCampaign && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="p-6 bg-white shadow-sm rounded-lg border">
+            <h3 className="text-lg font-semibold mb-2">File Upload</h3>
+            <p className="text-sm text-muted-foreground mb-4">Upload a CSV file with lead data</p>
+            <div className="flex flex-col space-y-4">
+              <Button 
+                className="flex items-center space-x-2" 
+                variant="outline" 
+                onClick={() => document.getElementById('file-upload')?.click()}
+                disabled={isUploading}
               >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select pacing" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">1 call/sec</SelectItem>
-                  <SelectItem value="2">2 calls/sec</SelectItem>
-                  <SelectItem value="3">3 calls/sec</SelectItem>
-                  <SelectItem value="5">5 calls/sec</SelectItem>
-                </SelectContent>
-              </Select>
+                <FileUp className="h-4 w-4" />
+                <span>{isUploading ? "Uploading..." : "Upload CSV"}</span>
+              </Button>
+              <input 
+                id="file-upload" 
+                type="file" 
+                accept=".csv" 
+                className="hidden" 
+                onChange={handleFileUpload} 
+                disabled={isUploading}
+              />
+              <p className="text-xs text-muted-foreground">CSV must include columns for Lead Name and Phone Number</p>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white shadow-sm rounded-lg border">
+            <h3 className="text-lg font-semibold mb-2">Pacing Controls</h3>
+            <p className="text-sm text-muted-foreground mb-4">Set the rate of outbound calls</p>
+            <div className="flex flex-col space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Call Pacing (calls/sec)</label>
+                <Select 
+                  value={selectedPacing} 
+                  onValueChange={setSelectedPacing}
+                  disabled={isExecuting}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select pacing" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 call/sec</SelectItem>
+                    <SelectItem value="2">2 calls/sec</SelectItem>
+                    <SelectItem value="3">3 calls/sec</SelectItem>
+                    <SelectItem value="5">5 calls/sec</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white shadow-sm rounded-lg border">
+            <h3 className="text-lg font-semibold mb-2">Call Execution</h3>
+            <p className="text-sm text-muted-foreground mb-4">Control the calling queue</p>
+            <div className="flex flex-col space-y-4">
+              <Button 
+                className={`${isExecuting ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"} w-full`} 
+                onClick={toggleExecution}
+                disabled={isCallInProgress}
+              >
+                {isExecuting ? (
+                  <>
+                    <Pause className="h-4 w-4 mr-2" />
+                    Stop Execution
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Start Execution
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground">Upload a CSV file and click Start to begin calling</p>
             </div>
           </div>
         </div>
-
-        <div className="p-6 bg-white shadow-sm rounded-lg border">
-          <h3 className="text-lg font-semibold mb-2">Call Execution</h3>
-          <p className="text-sm text-muted-foreground mb-4">Control the calling queue</p>
-          <div className="flex flex-col space-y-4">
-            <Button 
-              className={`${isExecuting ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"} w-full`} 
-              onClick={toggleExecution}
-              disabled={isCallInProgress}
-            >
-              {isExecuting ? (
-                <>
-                  <Pause className="h-4 w-4 mr-2" />
-                  Stop Execution
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 mr-2" />
-                  Start Execution
-                </>
-              )}
-            </Button>
-            <p className="text-xs text-muted-foreground">Upload a CSV file and click Start to begin calling</p>
-          </div>
-        </div>
-      </div>
+      )}
 
       <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
         <div className="p-6 border-b">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">Call Log</h3>
+            <h3 className="text-lg font-semibold">
+              {isViewingCampaign ? 'Campaign Leads' : 'Call Log'}
+            </h3>
             <div className="flex space-x-2">
               <div className="relative">
                 <Input
@@ -663,7 +765,9 @@ const Dashboard: FC = () => {
                   <TableHead>Disposition</TableHead>
                   <TableHead>Duration (min)</TableHead>
                   <TableHead>Cost</TableHead>
-                  <TableHead>Actions</TableHead>
+                  {!isViewingCampaign && (
+                    <TableHead>Actions</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -676,24 +780,30 @@ const Dashboard: FC = () => {
                       <TableCell>{lead.disposition || '-'}</TableCell>
                       <TableCell>{lead.duration?.toFixed(1) || '0.0'}</TableCell>
                       <TableCell>${lead.cost?.toFixed(2) || '0.00'}</TableCell>
-                      <TableCell>
-                        {lead.status === 'Pending' && lead.phone_id && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => triggerSingleCall(lead.id)}
-                            disabled={isCallInProgress}
-                          >
-                            <Phone className="h-4 w-4 mr-1" /> Call
-                          </Button>
-                        )}
-                      </TableCell>
+                      {!isViewingCampaign && (
+                        <TableCell>
+                          {lead.status === 'Pending' && lead.phone_id && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => triggerSingleCall(lead.id)}
+                              disabled={isCallInProgress}
+                            >
+                              <Phone className="h-4 w-4 mr-1" /> Call
+                            </Button>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 ) : (
                   <TableRow className="h-[100px]">
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      {searchTerm && isSearchActive ? "No matching leads found." : "No leads found. Upload a CSV file to get started."}
+                    <TableCell colSpan={isViewingCampaign ? 6 : 7} className="text-center text-muted-foreground">
+                      {searchTerm && isSearchActive 
+                        ? "No matching leads found." 
+                        : isViewingCampaign 
+                          ? "No leads found for this campaign." 
+                          : "No leads found. Upload a CSV file to get started."}
                     </TableCell>
                   </TableRow>
                 )}
