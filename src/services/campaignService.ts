@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -273,5 +272,96 @@ export const fetchCampaignLeads = async (campaignId: string) => {
   } catch (err) {
     console.error("Error in fetchCampaignLeads:", err);
     throw err;
+  }
+};
+
+// Add a new function to fetch all leads for a specific campaign
+export const fetchLeadsForCampaign = async (campaignId: string) => {
+  try {
+    // First, get the campaign_leads linking table entries
+    const { data: campaignLeads, error: linkError } = await supabase
+      .from('campaign_leads')
+      .select('lead_id')
+      .eq('campaign_id', campaignId);
+      
+    if (linkError) {
+      console.error("Error fetching campaign lead links:", linkError);
+      throw new Error("Failed to fetch campaign lead links");
+    }
+    
+    if (!campaignLeads || campaignLeads.length === 0) {
+      return [];
+    }
+    
+    // Create an array of lead IDs
+    const leadIds = campaignLeads.map(cl => cl.lead_id);
+    
+    // Fetch the actual leads
+    const { data: leads, error: leadsError } = await supabase
+      .from('leads')
+      .select('*')
+      .in('id', leadIds);
+      
+    if (leadsError) {
+      console.error("Error fetching leads for campaign:", leadsError);
+      throw new Error("Failed to fetch leads for campaign");
+    }
+    
+    return leads || [];
+  } catch (err) {
+    console.error("Error in fetchLeadsForCampaign:", err);
+    toast.error("Failed to fetch leads for campaign");
+    return [];
+  }
+};
+
+// Add a function to update campaign statistics
+export const updateCampaignStats = async (campaignId: string) => {
+  try {
+    // Fetch all leads for this campaign
+    const leads = await fetchLeadsForCampaign(campaignId);
+    
+    if (!leads || leads.length === 0) {
+      return null;
+    }
+    
+    // Calculate campaign statistics
+    const completed = leads.filter(lead => lead.status === 'Completed').length || 0;
+    const inProgress = leads.filter(lead => lead.status === 'In Progress').length || 0;
+    const failed = leads.filter(lead => lead.status === 'Failed').length || 0;
+    const remaining = leads.filter(lead => lead.status === 'Pending').length || 0;
+    const totalDuration = leads.reduce((sum, lead) => sum + (lead.duration || 0), 0) || 0;
+    const totalCost = leads.reduce((sum, lead) => sum + (lead.cost || 0), 0) || 0;
+    
+    // Determine campaign status
+    const status = inProgress > 0 ? 'in-progress' : 
+                   completed > 0 ? 'completed' : 
+                   failed > 0 ? 'partial' : 'pending';
+    
+    // Update the campaign
+    const { data: updatedCampaign, error } = await supabase
+      .from('campaigns')
+      .update({
+        status,
+        completed,
+        in_progress: inProgress,
+        remaining,
+        failed,
+        duration: totalDuration,
+        cost: totalCost
+      })
+      .eq('id', campaignId)
+      .select()
+      .single();
+      
+    if (error) {
+      console.error("Error updating campaign stats:", error);
+      throw new Error("Failed to update campaign stats");
+    }
+    
+    return updatedCampaign;
+  } catch (err) {
+    console.error("Error in updateCampaignStats:", err);
+    return null;
   }
 };

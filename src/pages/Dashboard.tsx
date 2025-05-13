@@ -1,3 +1,4 @@
+
 import { FC, useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search, X } from "lucide-react";
@@ -14,7 +15,9 @@ import {
   fetchCampaignById, 
   fetchCampaignLeads,
   createEmptyCampaign,
-  addLeadsToCampaign
+  addLeadsToCampaign,
+  fetchLeadsForCampaign,
+  updateCampaignStats
 } from "@/services/campaignService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -163,22 +166,11 @@ const Dashboard: FC = () => {
       });
       
       // Fetch leads for this campaign
-      const campaignLeads = await fetchCampaignLeads(id);
-      // Make sure the data conforms to the Lead interface
-      const formattedLeads: Lead[] = campaignLeads.map((lead: any) => ({
-        id: lead.id,
-        name: lead.name || 'Unknown',
-        phone_number: lead.phone_number || '',
-        phone_id: lead.phone_id,
-        status: lead.status || 'Unknown',
-        disposition: lead.disposition,
-        duration: lead.duration || 0,
-        cost: lead.cost || 0,
-        campaign_id: lead.campaign_id
-      }));
-
-      setLeads(formattedLeads);
-      setFilteredLeads(formattedLeads);
+      const leads = await fetchLeadsForCampaign(id);
+      
+      // Set leads and filtered leads
+      setLeads(leads);
+      setFilteredLeads(leads);
       
       // Set campaign name
       setCampaignName(campaign.name || "");
@@ -542,7 +534,7 @@ const Dashboard: FC = () => {
         toast.success(`Campaign "${campaignName}" created successfully`);
         setShowNewCampaignDialog(false);
         
-        // Show the upload leads dialog
+        // Show the upload leads dialog and set the current campaign ID
         setCurrentCampaignId(campaign.id);
         setShowUploadDialog(true);
       } else {
@@ -620,7 +612,7 @@ const Dashboard: FC = () => {
                   </Button>
                 </div>
                 <p className="text-muted-foreground">
-                  Viewing historical campaign data from {new Date(activeCampaign.created_at).toLocaleDateString()}
+                  Campaign created on {new Date(activeCampaign.created_at).toLocaleDateString()}
                 </p>
               </>
             ) : (
@@ -631,7 +623,21 @@ const Dashboard: FC = () => {
             )}
           </div>
           <div className="flex items-center space-x-4">
-            {!isViewingCampaign && (
+            {isViewingCampaign ? (
+              // Campaign-specific actions
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  // Show the upload dialog for the active campaign
+                  setCurrentCampaignId(activeCampaign.id);
+                  setShowUploadDialog(true);
+                }}
+              >
+                <FileUp className="h-4 w-4 mr-2" />
+                Add Leads
+              </Button>
+            ) : (
+              // Regular dashboard actions
               <>
                 <Button variant="outline" onClick={fetchLeads}>
                   Refresh Data
@@ -691,6 +697,7 @@ const Dashboard: FC = () => {
       </div>
 
       {!isViewingCampaign && (
+        // Regular dashboard controls - only show when not viewing a campaign
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="p-6 bg-white shadow-sm rounded-lg border">
             <h3 className="text-lg font-semibold mb-2">File Upload</h3>
@@ -769,6 +776,99 @@ const Dashboard: FC = () => {
         </div>
       )}
 
+      {isViewingCampaign && (
+        // Campaign-specific controls - only show when viewing a campaign
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="p-6 bg-white shadow-sm rounded-lg border">
+            <h3 className="text-lg font-semibold mb-2">Campaign Actions</h3>
+            <p className="text-sm text-muted-foreground mb-4">Manage this campaign</p>
+            <div className="flex flex-col space-y-4">
+              <Button 
+                className="flex items-center space-x-2" 
+                variant="outline" 
+                onClick={() => {
+                  setCurrentCampaignId(activeCampaign.id);
+                  setShowUploadDialog(true);
+                }}
+              >
+                <FileUp className="h-4 w-4 mr-2" />
+                Add More Leads
+              </Button>
+
+              <Button 
+                className={`${isExecuting ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"} w-full`} 
+                onClick={toggleExecution}
+                disabled={isCallInProgress}
+              >
+                {isExecuting ? (
+                  <>
+                    <Pause className="h-4 w-4 mr-2" />
+                    Stop Campaign
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Start Campaign
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white shadow-sm rounded-lg border">
+            <h3 className="text-lg font-semibold mb-2">Pacing Controls</h3>
+            <p className="text-sm text-muted-foreground mb-4">Set the rate of outbound calls</p>
+            <div className="flex flex-col space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Call Pacing (calls/sec)</label>
+                <Select 
+                  value={selectedPacing} 
+                  onValueChange={setSelectedPacing}
+                  disabled={isExecuting}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select pacing" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 call/sec</SelectItem>
+                    <SelectItem value="2">2 calls/sec</SelectItem>
+                    <SelectItem value="3">3 calls/sec</SelectItem>
+                    <SelectItem value="5">5 calls/sec</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 bg-white shadow-sm rounded-lg border">
+            <h3 className="text-lg font-semibold mb-2">Campaign Status</h3>
+            <p className="text-sm text-muted-foreground mb-4">Current campaign details</p>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Status:</span>
+                <span className="font-medium">{activeCampaign?.status || "Unknown"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Created:</span>
+                <span className="font-medium">{activeCampaign ? new Date(activeCampaign.created_at).toLocaleDateString() : "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Leads:</span>
+                <span className="font-medium">{activeCampaign?.leads_count || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Conversion Rate:</span>
+                <span className="font-medium">
+                  {activeCampaign && activeCampaign.leads_count > 0
+                    ? `${Math.round((activeCampaign.completed / activeCampaign.leads_count) * 100)}%`
+                    : "0%"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
         <div className="p-6 border-b">
           <div className="flex justify-between items-center">
@@ -821,9 +921,7 @@ const Dashboard: FC = () => {
                   <TableHead>Disposition</TableHead>
                   <TableHead>Duration (min)</TableHead>
                   <TableHead>Cost</TableHead>
-                  {!isViewingCampaign && (
-                    <TableHead>Actions</TableHead>
-                  )}
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -836,25 +934,23 @@ const Dashboard: FC = () => {
                       <TableCell>{lead.disposition || '-'}</TableCell>
                       <TableCell>{lead.duration?.toFixed(1) || '0.0'}</TableCell>
                       <TableCell>${lead.cost?.toFixed(2) || '0.00'}</TableCell>
-                      {!isViewingCampaign && (
-                        <TableCell>
-                          {lead.status === 'Pending' && lead.phone_id && (
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => triggerSingleCall(lead.id)}
-                              disabled={isCallInProgress}
-                            >
-                              <Phone className="h-4 w-4 mr-1" /> Call
-                            </Button>
-                          )}
-                        </TableCell>
-                      )}
+                      <TableCell>
+                        {lead.status === 'Pending' && lead.phone_id && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => triggerSingleCall(lead.id)}
+                            disabled={isCallInProgress}
+                          >
+                            <Phone className="h-4 w-4 mr-1" /> Call
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow className="h-[100px]">
-                    <TableCell colSpan={isViewingCampaign ? 6 : 7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       {searchTerm && isSearchActive 
                         ? "No matching leads found." 
                         : isViewingCampaign 
@@ -904,7 +1000,7 @@ const Dashboard: FC = () => {
             <DialogTitle>Upload Leads</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <p>Upload a CSV file with leads for your new campaign.</p>
+            <p>Upload a CSV file with leads for your {currentCampaignId ? 'campaign' : 'dashboard'}.</p>
             <Button 
               className="flex items-center space-x-2 w-full" 
               variant="outline" 
