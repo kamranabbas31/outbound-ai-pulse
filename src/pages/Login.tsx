@@ -1,80 +1,74 @@
 
-import { useState } from "react";
-import { Navigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
-import { Input } from "@/components/ui/input";
+import { FC, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
-const Login = () => {
+const Login: FC = () => {
+  const navigate = useNavigate();
+  const { login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const { isAuthenticated, login } = useAuth();
-  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const success = login(username, password);
-    
-    if (!success) {
-      toast({
-        title: "Login Failed",
-        description: "Invalid username or password",
-        variant: "destructive",
-      });
-    }
-  };
+    setIsLoading(true);
 
-  if (isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
+    if (login(username, password)) {
+      toast.success("Login successful");
+      navigate("/");
+    } else {
+      toast.error("Invalid username or password");
+    }
+
+    setIsLoading(false);
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md">
-        <div className="bg-white p-8 rounded-lg shadow-md">
-          <div className="flex justify-center mb-6">
+        <div className="bg-white rounded-lg shadow-md p-8">
+          <div className="flex flex-col items-center justify-center mb-8">
             <img 
               src="/lovable-uploads/620a3236-a743-4779-8cde-07f0a587c6ed.png" 
-              alt="Conversion Media Logo" 
-              className="h-12" 
+              alt="Conversion Media Group Logo" 
+              className="h-16 mb-4"
             />
+            <h1 className="text-2xl font-bold text-gray-900">Call Manager</h1>
+            <p className="text-gray-500">Sign in to your account</p>
           </div>
-          <h2 className="text-2xl font-bold text-center mb-6">
-            Conversion Media Group
-          </h2>
-          
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-                Username
-              </label>
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
               <Input
                 id="username"
-                type="text"
+                placeholder="Enter your username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter username"
                 required
               />
             </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
+                placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
                 required
               />
             </div>
-
-            <Button type="submit" className="w-full">
-              Login
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isLoading}
+            >
+              {isLoading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
         </div>

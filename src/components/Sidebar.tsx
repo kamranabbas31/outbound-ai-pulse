@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { LayoutDashboard, Phone, FileText, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 interface SidebarProps {
   currentPath: string;
@@ -14,7 +14,6 @@ const Sidebar: FC<SidebarProps> = ({
   currentPath
 }) => {
   const { logout } = useAuth();
-  const { toast } = useToast();
 
   const menuItems = [{
     name: "Dashboard",
@@ -32,10 +31,7 @@ const Sidebar: FC<SidebarProps> = ({
 
   const handleLogout = () => {
     logout();
-    toast({
-      title: "Logged out",
-      description: "You have been logged out successfully",
-    });
+    toast.success("Logged out successfully");
   };
 
   return (
