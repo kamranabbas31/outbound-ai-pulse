@@ -17,12 +17,13 @@ const Sidebar: FC<SidebarProps> = ({ currentPath }) => {
   return (
     <div className="hidden md:flex flex-col h-screen w-56 border-r bg-white">
       <div className="flex items-center h-16 px-4 border-b">
-        <div className="flex items-center">
+        <div className="flex items-center space-x-2">
           <img 
             src="/lovable-uploads/620a3236-a743-4779-8cde-07f0a587c6ed.png" 
             alt="Conversion Media Logo" 
             className="h-8" 
           />
+          <h1 className="text-sm font-semibold">Conversion Media Group</h1>
         </div>
       </div>
 
