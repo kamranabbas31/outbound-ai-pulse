@@ -1,5 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const VAPI_API_KEY = Deno.env.get("VAPI_API_KEY");
 const VAPI_API_URL = "https://api.vapi.ai/call/phone";
@@ -190,7 +191,7 @@ serve(async (req) => {
   }
 });
 
-// Helper to create a Supabase client (copied from Supabase docs since we can't import from external modules)
+// Helper to create a Supabase client (correctly importing from esm.sh instead of relying on a local helper)
 function createClient(supabaseUrl: string, supabaseKey: string) {
   return {
     from: (table: string) => ({
