@@ -154,8 +154,21 @@ const Dashboard: FC = () => {
       
       // Fetch leads for this campaign
       const campaignLeads = await fetchCampaignLeads(id);
-      setLeads(campaignLeads);
-      setFilteredLeads(campaignLeads);
+      // Make sure the data conforms to the Lead interface
+      const formattedLeads: Lead[] = campaignLeads.map((lead: any) => ({
+        id: lead.id,
+        name: lead.name || 'Unknown',
+        phone_number: lead.phone_number || '',
+        phone_id: lead.phone_id,
+        status: lead.status || 'Unknown',
+        disposition: lead.disposition,
+        duration: lead.duration || 0,
+        cost: lead.cost || 0,
+        campaign_id: lead.campaign_id
+      }));
+
+      setLeads(formattedLeads);
+      setFilteredLeads(formattedLeads);
       
       // Set campaign name
       setCampaignName(campaign.name || "");
