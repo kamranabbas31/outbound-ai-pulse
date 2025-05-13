@@ -1,3 +1,4 @@
+
 import { FC, useState, useEffect } from "react";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search, X } from "lucide-react";
 import { toast } from "sonner";
@@ -124,21 +125,32 @@ const Dashboard: FC = () => {
     
     setLeads(data || []);
     
+    // Always update the stats regardless of search state
+    updateStats(data || []);
+    
     // Only update filteredLeads if there's no active search
     if (!isSearchActive) {
       setFilteredLeads(data || []);
     } else if (isSearchActive && searchTerm) {
       // If search is active, apply the filter to the new data
-      applySearchFilter(data || [], searchTerm);
+      // This ensures we have the latest data but maintain the filter
+      const filtered = data?.filter(lead => 
+        lead.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        lead.phone_number.includes(searchTerm) ||
+        lead.status.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (lead.disposition && lead.disposition.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+      setFilteredLeads(filtered || []);
     }
-    
-    // Update stats
-    const completed = data?.filter(lead => lead.status === 'Completed').length || 0;
-    const inProgress = data?.filter(lead => lead.status === 'In Progress').length || 0;
-    const failed = data?.filter(lead => lead.status === 'Failed').length || 0;
-    const remaining = data?.filter(lead => lead.status === 'Pending').length || 0;
-    const totalDuration = data?.reduce((sum, lead) => sum + (lead.duration || 0), 0) || 0;
-    const totalCost = data?.reduce((sum, lead) => sum + (lead.cost || 0), 0) || 0;
+  };
+
+  const updateStats = (leadsData: Lead[]) => {
+    const completed = leadsData.filter(lead => lead.status === 'Completed').length || 0;
+    const inProgress = leadsData.filter(lead => lead.status === 'In Progress').length || 0;
+    const failed = leadsData.filter(lead => lead.status === 'Failed').length || 0;
+    const remaining = leadsData.filter(lead => lead.status === 'Pending').length || 0;
+    const totalDuration = leadsData.reduce((sum, lead) => sum + (lead.duration || 0), 0) || 0;
+    const totalCost = leadsData.reduce((sum, lead) => sum + (lead.cost || 0), 0) || 0;
     
     setStats({
       completed,
@@ -402,6 +414,8 @@ const Dashboard: FC = () => {
       
       if (resetSuccess) {
         toast.success("Campaign created and dashboard reset");
+        // Clear search when creating a new campaign
+        clearSearch();
         fetchLeads(); // Refresh the leads list (should be empty now)
         setShowNewCampaignDialog(false);
         // Reset the uploaded file name
@@ -430,16 +444,22 @@ const Dashboard: FC = () => {
 
   // Search function
   const handleSearch = () => {
-    setIsSearchActive(!!searchTerm.trim());
+    // Only set search as active if there's actually a search term
+    const hasSearchTerm = !!searchTerm.trim();
+    setIsSearchActive(hasSearchTerm);
     
-    const filtered = applySearchFilter(leads, searchTerm);
-    
-    if (searchTerm.trim()) {
+    if (hasSearchTerm) {
+      const filtered = applySearchFilter(leads, searchTerm);
+      
       if (filtered.length === 0) {
         toast.info("No matching leads found");
       } else {
         toast.success(`Found ${filtered.length} matching leads`);
       }
+    } else {
+      // If search term is empty, show all leads
+      setFilteredLeads(leads);
+      toast.info("Showing all leads");
     }
   };
 
@@ -448,6 +468,7 @@ const Dashboard: FC = () => {
     setSearchTerm("");
     setIsSearchActive(false);
     setFilteredLeads(leads);
+    toast.info("Search cleared");
   };
 
   return (
@@ -672,7 +693,7 @@ const Dashboard: FC = () => {
                 ) : (
                   <TableRow className="h-[100px]">
                     <TableCell colSpan={7} className="text-center text-muted-foreground">
-                      {searchTerm ? "No matching leads found." : "No leads found. Upload a CSV file to get started."}
+                      {searchTerm && isSearchActive ? "No matching leads found." : "No leads found. Upload a CSV file to get started."}
                     </TableCell>
                   </TableRow>
                 )}
