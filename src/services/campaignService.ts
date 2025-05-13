@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -166,8 +167,8 @@ export const addLeadsToCampaign = async (campaignId: string, leads: any[]) => {
     const { data: updatedCampaign, error: updateError } = await supabase
       .from('campaigns')
       .update({
-        leads_count: insertedLeads.length,
-        remaining: insertedLeads.length
+        leads_count: leads.length,
+        remaining: leads.length
       })
       .eq('id', campaignId)
       .select()
@@ -179,7 +180,7 @@ export const addLeadsToCampaign = async (campaignId: string, leads: any[]) => {
       return false;
     }
     
-    return true;
+    return updatedCampaign;
   } catch (err) {
     console.error("Error in addLeadsToCampaign:", err);
     toast.error("Failed to add leads to campaign");

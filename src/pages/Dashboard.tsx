@@ -312,13 +312,13 @@ const Dashboard: FC = () => {
             }
             
             // Add leads to the campaign
-            const success = await addLeadsToCampaign(currentCampaignId, formattedLeads);
+            const updatedCampaign = await addLeadsToCampaign(currentCampaignId, formattedLeads);
             
-            if (success) {
+            if (updatedCampaign) {
               toast.success(`Successfully uploaded ${formattedLeads.length} leads to campaign`);
               
-              // Navigate to the campaign view
-              navigate(`/?campaignId=${currentCampaignId}`);
+              // Load the campaign data to display stats directly
+              await loadCampaignData(currentCampaignId);
               
               // Reset state
               setCurrentCampaignId(null);
