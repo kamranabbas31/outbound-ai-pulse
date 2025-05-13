@@ -1,5 +1,5 @@
 import { FC, useState, useEffect } from "react";
-import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search } from "lucide-react";
+import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import StatCard from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ const Dashboard: FC = () => {
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
+  const [isSearchActive, setIsSearchActive] = useState(false);
 
   // Check if campaign is completed
   useEffect(() => {
@@ -122,7 +123,14 @@ const Dashboard: FC = () => {
     }
     
     setLeads(data || []);
-    setFilteredLeads(data || []);
+    
+    // Only update filteredLeads if there's no active search
+    if (!isSearchActive) {
+      setFilteredLeads(data || []);
+    } else if (isSearchActive && searchTerm) {
+      // If search is active, apply the filter to the new data
+      applySearchFilter(data || [], searchTerm);
+    }
     
     // Update stats
     const completed = data?.filter(lead => lead.status === 'Completed').length || 0;
@@ -402,27 +410,44 @@ const Dashboard: FC = () => {
     }
   };
 
-  // Add a function to handle search
-  const handleSearch = () => {
-    if (!searchTerm.trim()) {
-      setFilteredLeads(leads);
-      return;
+  // Apply search filter to leads
+  const applySearchFilter = (leadsToFilter: Lead[], term: string) => {
+    if (!term.trim()) {
+      setFilteredLeads(leadsToFilter);
+      return leadsToFilter;
     }
     
-    const filtered = leads.filter(lead => 
-      lead.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      lead.phone_number.includes(searchTerm) ||
-      lead.status.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (lead.disposition && lead.disposition.toLowerCase().includes(searchTerm.toLowerCase()))
+    const filtered = leadsToFilter.filter(lead => 
+      lead.name.toLowerCase().includes(term.toLowerCase()) || 
+      lead.phone_number.includes(term) ||
+      lead.status.toLowerCase().includes(term.toLowerCase()) ||
+      (lead.disposition && lead.disposition.toLowerCase().includes(term.toLowerCase()))
     );
     
     setFilteredLeads(filtered);
+    return filtered;
+  };
+
+  // Search function
+  const handleSearch = () => {
+    setIsSearchActive(!!searchTerm.trim());
     
-    if (filtered.length === 0) {
-      toast.info("No matching leads found");
-    } else {
-      toast.success(`Found ${filtered.length} matching leads`);
+    const filtered = applySearchFilter(leads, searchTerm);
+    
+    if (searchTerm.trim()) {
+      if (filtered.length === 0) {
+        toast.info("No matching leads found");
+      } else {
+        toast.success(`Found ${filtered.length} matching leads`);
+      }
     }
+  };
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchTerm("");
+    setIsSearchActive(false);
+    setFilteredLeads(leads);
   };
 
   return (
@@ -572,17 +597,29 @@ const Dashboard: FC = () => {
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Call Log</h3>
             <div className="flex space-x-2">
-              <Input
-                placeholder="Search leads..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-64"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleSearch();
-                  }
-                }}
-              />
+              <div className="relative">
+                <Input
+                  placeholder="Search leads..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-64 pr-8"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSearch();
+                    }
+                  }}
+                />
+                {isSearchActive && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className="absolute right-0 top-0 h-full rounded-l-none"
+                    onClick={clearSearch}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
               <Button 
                 variant="outline" 
                 onClick={handleSearch}
