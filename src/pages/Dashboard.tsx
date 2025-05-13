@@ -480,7 +480,7 @@ const Dashboard: FC = () => {
     // Show the dialog to name the campaign
     setShowNewCampaignDialog(true);
     
-    // Pre-fill the campaign name with the last uploaded file name (if any)
+    // Set default campaign name (use current date if no file was uploaded)
     if (lastUploadedFileName) {
       setCampaignName(lastUploadedFileName.replace('.csv', ''));
     } else {
@@ -489,25 +489,37 @@ const Dashboard: FC = () => {
   };
 
   const handleCreateNewCampaign = async () => {
-    // First, make sure current leads are saved as a campaign
-    const fileName = lastUploadedFileName || null;
-    
-    // Create a campaign with current leads data
-    const campaign = await createCampaign(fileName);
-    
-    if (campaign) {
-      // Reset the leads table
-      const resetSuccess = await resetLeads();
-      
-      if (resetSuccess) {
-        toast.success("Campaign created and dashboard reset");
-        // Clear search when creating a new campaign
-        clearSearch();
-        fetchLeads(); // Refresh the leads list (should be empty now)
-        setShowNewCampaignDialog(false);
-        // Reset the uploaded file name
-        setLastUploadedFileName(null);
+    try {
+      // Validate campaign name
+      if (!campaignName.trim()) {
+        toast.error("Please enter a valid campaign name");
+        return;
       }
+      
+      // Create a campaign with current leads data and the provided name
+      const fileName = lastUploadedFileName || null;
+      
+      const campaign = await createCampaign(fileName);
+      
+      if (campaign) {
+        // Reset the leads table
+        const resetSuccess = await resetLeads();
+        
+        if (resetSuccess) {
+          toast.success(`Campaign "${campaignName}" created successfully`);
+          // Clear search when creating a new campaign
+          clearSearch();
+          fetchLeads(); // Refresh the leads list (should be empty now)
+          setShowNewCampaignDialog(false);
+          // Reset the uploaded file name
+          setLastUploadedFileName(null);
+        }
+      } else {
+        toast.error("Failed to create campaign. Make sure you have leads to include.");
+      }
+    } catch (error) {
+      console.error("Error creating campaign:", error);
+      toast.error("An error occurred while creating the campaign");
     }
   };
 
@@ -840,6 +852,7 @@ const Dashboard: FC = () => {
                 value={campaignName} 
                 onChange={(e) => setCampaignName(e.target.value)}
                 placeholder="Enter campaign name"
+                autoFocus
               />
             </div>
             <p className="text-sm text-muted-foreground">
