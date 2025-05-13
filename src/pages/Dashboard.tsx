@@ -8,10 +8,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { parseCSV } from "@/utils/csvParser";
 import { supabase } from "@/integrations/supabase/client";
-import { createCampaign, resetLeads, fetchCampaignById, fetchCampaignLeads } from "@/services/campaignService";
+import { 
+  createCampaign, 
+  resetLeads, 
+  fetchCampaignById, 
+  fetchCampaignLeads,
+  createEmptyCampaign,
+  addLeadsToCampaign
+} from "@/services/campaignService";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 interface Lead {
   id: string;
@@ -54,6 +62,8 @@ const Dashboard: FC = () => {
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [activeCampaign, setActiveCampaign] = useState<any>(null);
   const [isViewingCampaign, setIsViewingCampaign] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [currentCampaignId, setCurrentCampaignId] = useState<string | null>(null);
 
   // Load campaign data if campaignId is present in URL
   useEffect(() => {
@@ -265,7 +275,7 @@ const Dashboard: FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Store the file name for campaign creation
+    // Store the file name
     setLastUploadedFileName(file.name);
     setIsUploading(true);
     
@@ -283,46 +293,79 @@ const Dashboard: FC = () => {
             return;
           }
           
-          // Get available phone IDs for these leads
-          let successCount = 0;
-          let errorCount = 0;
-          
-          // Insert leads into the database
-          for (const lead of parsedLeads) {
-            try {
+          if (currentCampaignId) {
+            // We're uploading leads to a specific campaign
+            const formattedLeads = [];
+            
+            // Get available phone IDs for these leads
+            for (const lead of parsedLeads) {
               // Try to get an available phone ID
               const phoneId = await getAvailablePhoneId();
               
-              // Insert the lead with the phone ID if available
-              const { error } = await supabase.from('leads').insert({
+              formattedLeads.push({
                 name: lead.name,
                 phone_number: lead.phoneNumber,
-                phone_id: phoneId,  // This might be null if no phone IDs are available
+                phone_id: phoneId,
                 status: phoneId ? 'Pending' : 'Failed',
                 disposition: phoneId ? null : 'No available phone ID'
               });
-              
-              if (error) {
-                console.error("Error inserting lead:", error);
-                errorCount++;
-              } else {
-                successCount++;
-              }
-            } catch (err) {
-              console.error("Error processing lead:", err);
-              errorCount++;
             }
+            
+            // Add leads to the campaign
+            const success = await addLeadsToCampaign(currentCampaignId, formattedLeads);
+            
+            if (success) {
+              toast.success(`Successfully uploaded ${formattedLeads.length} leads to campaign`);
+              
+              // Navigate to the campaign view
+              navigate(`/?campaignId=${currentCampaignId}`);
+              
+              // Reset state
+              setCurrentCampaignId(null);
+              setShowUploadDialog(false);
+            }
+          } else {
+            // Regular upload to the active leads table
+            let successCount = 0;
+            let errorCount = 0;
+            
+            // Insert leads into the database
+            for (const lead of parsedLeads) {
+              try {
+                // Try to get an available phone ID
+                const phoneId = await getAvailablePhoneId();
+                
+                // Insert the lead with the phone ID if available
+                const { error } = await supabase.from('leads').insert({
+                  name: lead.name,
+                  phone_number: lead.phoneNumber,
+                  phone_id: phoneId,
+                  status: phoneId ? 'Pending' : 'Failed',
+                  disposition: phoneId ? null : 'No available phone ID'
+                });
+                
+                if (error) {
+                  console.error("Error inserting lead:", error);
+                  errorCount++;
+                } else {
+                  successCount++;
+                }
+              } catch (err) {
+                console.error("Error processing lead:", err);
+                errorCount++;
+              }
+            }
+            
+            if (successCount > 0) {
+              toast.success(`Successfully uploaded ${successCount} leads`);
+            }
+            
+            if (errorCount > 0) {
+              toast.error(`Failed to upload ${errorCount} leads`);
+            }
+            
+            fetchLeads(); // Refresh the leads list
           }
-          
-          if (successCount > 0) {
-            toast.success(`Successfully uploaded ${successCount} leads`);
-          }
-          
-          if (errorCount > 0) {
-            toast.error(`Failed to upload ${errorCount} leads`);
-          }
-          
-          fetchLeads(); // Refresh the leads list
         } catch (err) {
           console.error("Error parsing CSV:", err);
           toast.error("Failed to parse CSV file. Make sure it has Name and Phone columns.");
@@ -480,12 +523,8 @@ const Dashboard: FC = () => {
     // Show the dialog to name the campaign
     setShowNewCampaignDialog(true);
     
-    // Set default campaign name (use current date if no file was uploaded)
-    if (lastUploadedFileName) {
-      setCampaignName(lastUploadedFileName.replace('.csv', ''));
-    } else {
-      setCampaignName(`Campaign ${new Date().toLocaleDateString()}`);
-    }
+    // Set default campaign name
+    setCampaignName(`Campaign ${new Date().toLocaleDateString()}`);
   };
 
   const handleCreateNewCampaign = async () => {
@@ -496,26 +535,18 @@ const Dashboard: FC = () => {
         return;
       }
       
-      // Create a campaign with current leads data and the provided name
-      const fileName = lastUploadedFileName || null;
-      
-      const campaign = await createCampaign(fileName);
+      // Create an empty campaign with the provided name
+      const campaign = await createEmptyCampaign(campaignName);
       
       if (campaign) {
-        // Reset the leads table
-        const resetSuccess = await resetLeads();
+        toast.success(`Campaign "${campaignName}" created successfully`);
+        setShowNewCampaignDialog(false);
         
-        if (resetSuccess) {
-          toast.success(`Campaign "${campaignName}" created successfully`);
-          // Clear search when creating a new campaign
-          clearSearch();
-          fetchLeads(); // Refresh the leads list (should be empty now)
-          setShowNewCampaignDialog(false);
-          // Reset the uploaded file name
-          setLastUploadedFileName(null);
-        }
+        // Show the upload leads dialog
+        setCurrentCampaignId(campaign.id);
+        setShowUploadDialog(true);
       } else {
-        toast.error("Failed to create campaign. Make sure you have leads to include.");
+        toast.error("Failed to create campaign");
       }
     } catch (error) {
       console.error("Error creating campaign:", error);
@@ -856,12 +887,55 @@ const Dashboard: FC = () => {
               />
             </div>
             <p className="text-sm text-muted-foreground">
-              This will save your current leads as a campaign and reset the dashboard.
+              This will create a new empty campaign. You'll be prompted to upload leads afterward.
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewCampaignDialog(false)}>Cancel</Button>
-            <Button onClick={handleCreateNewCampaign}>Create & Reset</Button>
+            <Button onClick={handleCreateNewCampaign}>Create Campaign</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Leads Dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Leads</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p>Upload a CSV file with leads for your new campaign.</p>
+            <Button 
+              className="flex items-center space-x-2 w-full" 
+              variant="outline" 
+              onClick={() => document.getElementById('campaign-file-upload')?.click()}
+              disabled={isUploading}
+            >
+              <FileUp className="h-4 w-4" />
+              <span>{isUploading ? "Uploading..." : "Select CSV File"}</span>
+            </Button>
+            <input 
+              id="campaign-file-upload" 
+              type="file" 
+              accept=".csv" 
+              className="hidden" 
+              onChange={handleFileUpload} 
+              disabled={isUploading}
+            />
+            <p className="text-xs text-muted-foreground">
+              CSV must include columns for Lead Name and Phone Number
+            </p>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowUploadDialog(false);
+                setCurrentCampaignId(null);
+              }}
+            >
+              Skip Upload
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

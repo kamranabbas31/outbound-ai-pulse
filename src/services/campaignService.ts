@@ -85,6 +85,109 @@ export const createCampaign = async (fileName: string | null = null) => {
 };
 
 /**
+ * Creates a new empty campaign
+ */
+export const createEmptyCampaign = async (campaignName: string) => {
+  try {
+    if (!campaignName.trim()) {
+      toast.error("Campaign name is required");
+      return null;
+    }
+    
+    // Insert new empty campaign
+    const { data: campaign, error: campaignError } = await supabase
+      .from('campaigns')
+      .insert({
+        name: campaignName,
+        file_name: null,
+        status: 'pending',
+        leads_count: 0,
+        completed: 0,
+        in_progress: 0,
+        remaining: 0,
+        failed: 0,
+        duration: 0,
+        cost: 0
+      })
+      .select()
+      .single();
+      
+    if (campaignError) {
+      console.error("Error creating empty campaign:", campaignError);
+      throw new Error("Failed to create empty campaign");
+    }
+    
+    return campaign;
+  } catch (err) {
+    console.error("Error in createEmptyCampaign:", err);
+    toast.error("Failed to create empty campaign");
+    return null;
+  }
+};
+
+/**
+ * Adds leads to a specific campaign
+ */
+export const addLeadsToCampaign = async (campaignId: string, leads: any[]) => {
+  try {
+    if (!leads || leads.length === 0) {
+      toast.error("No leads to add to campaign");
+      return false;
+    }
+    
+    // Insert leads to the database
+    const { data: insertedLeads, error: leadsError } = await supabase
+      .from('leads')
+      .insert(leads)
+      .select();
+      
+    if (leadsError) {
+      console.error("Error inserting leads:", leadsError);
+      throw new Error("Failed to insert leads");
+    }
+    
+    // Link leads to the campaign
+    const campaignLeads = insertedLeads.map(lead => ({
+      campaign_id: campaignId,
+      lead_id: lead.id
+    }));
+    
+    const { error: linkError } = await supabase
+      .from('campaign_leads')
+      .insert(campaignLeads);
+      
+    if (linkError) {
+      console.error("Error linking leads to campaign:", linkError);
+      toast.error("Leads added but some could not be linked to the campaign");
+      return false;
+    }
+    
+    // Update campaign statistics
+    const { data: updatedCampaign, error: updateError } = await supabase
+      .from('campaigns')
+      .update({
+        leads_count: insertedLeads.length,
+        remaining: insertedLeads.length
+      })
+      .eq('id', campaignId)
+      .select()
+      .single();
+      
+    if (updateError) {
+      console.error("Error updating campaign stats:", updateError);
+      toast.error("Leads added but campaign stats could not be updated");
+      return false;
+    }
+    
+    return true;
+  } catch (err) {
+    console.error("Error in addLeadsToCampaign:", err);
+    toast.error("Failed to add leads to campaign");
+    return false;
+  }
+};
+
+/**
  * Fetches all campaigns
  */
 export const fetchCampaigns = async () => {
