@@ -78,7 +78,7 @@ serve(async (req) => {
       );
     }
 
-    // Prepare the payload for Vapi
+    // Prepare the payload for Vapi with updated comment
     const payload = {
       assistantId: "40664072-59ad-4106-9d5d-1fd5ed5dacbe", // Using the ID provided by user
       assistantOverrides: {
@@ -109,7 +109,7 @@ serve(async (req) => {
             enabled: true
           }
         }
-        // Removed webhookUrl property as it's causing the API error
+        // Webhooks are not included to avoid API errors
       },
       phoneNumberId: lead.phone_id,
       customer: {
