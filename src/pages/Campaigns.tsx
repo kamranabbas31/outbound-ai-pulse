@@ -1,8 +1,10 @@
+
 import { FC, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { fetchCampaigns } from "@/services/campaignService";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 
 interface Campaign {
   id: string;
@@ -32,6 +34,7 @@ const Campaigns: FC = () => {
     setIsLoading(true);
     try {
       const data = await fetchCampaigns();
+      console.log("Loaded campaigns:", data);
       setCampaigns(data);
     } catch (error) {
       console.error("Error loading campaigns:", error);
@@ -72,11 +75,21 @@ const Campaigns: FC = () => {
     navigate(`/?campaignId=${campaignId}`);
   };
 
+  const handleRefresh = () => {
+    loadCampaigns();
+    toast.success("Campaigns refreshed");
+  };
+
   return (
     <div className="space-y-8">
-      <div className="flex flex-col space-y-2">
-        <h2 className="text-2xl font-bold">Campaigns</h2>
-        <p className="text-muted-foreground">View and manage your calling campaigns</p>
+      <div className="flex justify-between items-center">
+        <div className="flex flex-col space-y-2">
+          <h2 className="text-2xl font-bold">Campaigns</h2>
+          <p className="text-muted-foreground">View and manage your calling campaigns</p>
+        </div>
+        <Button onClick={handleRefresh} variant="outline" className="ml-auto">
+          Refresh
+        </Button>
       </div>
 
       <div className="bg-white shadow-sm rounded-lg border overflow-hidden">

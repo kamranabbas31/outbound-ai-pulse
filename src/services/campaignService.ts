@@ -13,7 +13,8 @@ export const createCampaign = async (fileName: string | null = null) => {
       
     if (leadsError) {
       console.error("Error fetching leads:", leadsError);
-      throw new Error("Failed to fetch leads");
+      toast.error("Failed to fetch leads");
+      return null;
     }
     
     if (!leads || leads.length === 0) {
@@ -38,7 +39,20 @@ export const createCampaign = async (fileName: string | null = null) => {
                    completed > 0 ? 'completed' : 
                    failed > 0 ? 'partial' : 'pending';
     
-    // Insert new campaign
+    // Insert new campaign with more verbose error reporting
+    console.log("Creating campaign with data:", {
+      name: campaignName,
+      file_name: fileName,
+      status,
+      leads_count: leads.length,
+      completed,
+      in_progress: inProgress,
+      remaining,
+      failed,
+      duration: totalDuration,
+      cost: totalCost
+    });
+    
     const { data: campaign, error: campaignError } = await supabase
       .from('campaigns')
       .insert({
@@ -58,14 +72,19 @@ export const createCampaign = async (fileName: string | null = null) => {
       
     if (campaignError) {
       console.error("Error creating campaign:", campaignError);
-      throw new Error("Failed to create campaign");
+      toast.error(`Failed to create campaign: ${campaignError.message}`);
+      return null;
     }
+    
+    console.log("Campaign created successfully:", campaign);
     
     // Link leads to the campaign
     const campaignLeads = leads.map(lead => ({
       campaign_id: campaign.id,
       lead_id: lead.id
     }));
+    
+    console.log("Linking leads to campaign:", campaignLeads);
     
     const { error: linkError } = await supabase
       .from('campaign_leads')
@@ -74,12 +93,14 @@ export const createCampaign = async (fileName: string | null = null) => {
     if (linkError) {
       console.error("Error linking leads to campaign:", linkError);
       toast.error("Campaign created but some leads could not be linked");
+    } else {
+      toast.success("Campaign created successfully!");
     }
     
     return campaign;
   } catch (err) {
     console.error("Error in createCampaign:", err);
-    toast.error("Failed to create campaign");
+    toast.error("Failed to create campaign due to an unexpected error");
     return null;
   }
 };
@@ -245,7 +266,8 @@ export const fetchCampaignById = async (campaignId: string) => {
       
     if (error) {
       console.error("Error fetching campaign:", error);
-      throw new Error(error.message);
+      toast.error(`Failed to fetch campaign: ${error.message}`);
+      throw error;
     }
     
     return data;
@@ -265,7 +287,8 @@ export const fetchCampaignLeads = async (campaignId: string) => {
       
     if (error) {
       console.error("Error fetching campaign leads:", error);
-      throw new Error(error.message);
+      toast.error(`Failed to fetch campaign leads: ${error.message}`);
+      throw error;
     }
     
     return data || [];
@@ -286,6 +309,7 @@ export const fetchLeadsForCampaign = async (campaignId: string) => {
       
     if (linkError) {
       console.error("Error fetching campaign lead links:", linkError);
+      toast.error("Failed to fetch campaign lead links");
       throw new Error("Failed to fetch campaign lead links");
     }
     
@@ -296,6 +320,8 @@ export const fetchLeadsForCampaign = async (campaignId: string) => {
     // Create an array of lead IDs
     const leadIds = campaignLeads.map(cl => cl.lead_id);
     
+    console.log("Fetching leads with IDs:", leadIds);
+    
     // Fetch the actual leads
     const { data: leads, error: leadsError } = await supabase
       .from('leads')
@@ -304,6 +330,7 @@ export const fetchLeadsForCampaign = async (campaignId: string) => {
       
     if (leadsError) {
       console.error("Error fetching leads for campaign:", leadsError);
+      toast.error("Failed to fetch leads for campaign");
       throw new Error("Failed to fetch leads for campaign");
     }
     
@@ -322,6 +349,7 @@ export const updateCampaignStats = async (campaignId: string) => {
     const leads = await fetchLeadsForCampaign(campaignId);
     
     if (!leads || leads.length === 0) {
+      console.log("No leads found for campaign, skipping stats update");
       return null;
     }
     
@@ -337,6 +365,16 @@ export const updateCampaignStats = async (campaignId: string) => {
     const status = inProgress > 0 ? 'in-progress' : 
                    completed > 0 ? 'completed' : 
                    failed > 0 ? 'partial' : 'pending';
+    
+    console.log("Updating campaign stats:", {
+      status,
+      completed,
+      in_progress: inProgress,
+      remaining,
+      failed,
+      duration: totalDuration,
+      cost: totalCost
+    });
     
     // Update the campaign
     const { data: updatedCampaign, error } = await supabase
@@ -356,6 +394,7 @@ export const updateCampaignStats = async (campaignId: string) => {
       
     if (error) {
       console.error("Error updating campaign stats:", error);
+      toast.error("Failed to update campaign stats");
       throw new Error("Failed to update campaign stats");
     }
     
