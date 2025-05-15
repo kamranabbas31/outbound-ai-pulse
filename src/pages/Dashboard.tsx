@@ -1,3 +1,4 @@
+
 import { FC, useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search, X } from "lucide-react";
@@ -533,24 +534,9 @@ const Dashboard: FC = () => {
         toast.success(`Campaign "${campaignName}" created successfully`);
         setShowNewCampaignDialog(false);
         
-        // Reset dashboard data when creating a new campaign
-        setLeads([]);
-        setFilteredLeads([]);
-        setStats({
-          completed: 0,
-          inProgress: 0,
-          remaining: 0,
-          failed: 0,
-          totalDuration: 0,
-          totalCost: 0,
-        });
-        
         // Show the upload leads dialog and set the current campaign ID
         setCurrentCampaignId(campaign.id);
         setShowUploadDialog(true);
-        
-        // Update URL with campaign ID to switch to campaign view
-        navigate(`/?campaignId=${campaign.id}`, { replace: true });
       } else {
         toast.error("Failed to create campaign");
       }
