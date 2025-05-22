@@ -1,3 +1,4 @@
+
 import { FC, useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search, X } from "lucide-react";
@@ -220,6 +221,8 @@ const Dashboard: FC = () => {
     // Skip if we're viewing a campaign, as we don't want to load the active leads
     if (isViewingCampaign) return;
     
+    // Modification: Only fetch the most recently uploaded leads if not in a campaign
+    // This ensures we only show the leads from the latest upload
     const { data, error } = await supabase
       .from('leads')
       .select('*')
@@ -231,24 +234,40 @@ const Dashboard: FC = () => {
       return;
     }
     
-    setLeads(data || []);
-    
-    // Always update the stats regardless of search state
-    updateStats(data || []);
-    
-    // Only update filteredLeads if there's no active search
-    if (!isSearchActive) {
-      setFilteredLeads(data || []);
-    } else if (isSearchActive && searchTerm) {
-      // If search is active, apply the filter to the new data
-      // This ensures we have the latest data but maintain the filter
-      const filtered = data?.filter(lead => 
-        lead.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        lead.phone_number.includes(searchTerm) ||
-        lead.status.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (lead.disposition && lead.disposition.toLowerCase().includes(searchTerm.toLowerCase()))
+    // Only set leads if there's actual data
+    if (data && data.length > 0) {
+      // Get the timestamp of the most recent lead to filter by
+      const mostRecentTimestamp = data[0].created_at;
+      
+      // Filter to only include leads from the most recent upload batch
+      // We're assuming leads uploaded in the same batch have very similar timestamps
+      // Get all leads created within 5 seconds of the most recent one
+      const fiveSecondsAgo = new Date(mostRecentTimestamp);
+      fiveSecondsAgo.setSeconds(fiveSecondsAgo.getSeconds() - 5);
+      
+      const recentLeads = data.filter(lead => 
+        new Date(lead.created_at) >= fiveSecondsAgo
       );
-      setFilteredLeads(filtered || []);
+      
+      setLeads(recentLeads);
+      
+      // Always update the stats based on the filtered leads
+      updateStats(recentLeads || []);
+      
+      // Only update filteredLeads if there's no active search
+      if (!isSearchActive) {
+        setFilteredLeads(recentLeads || []);
+      } else if (isSearchActive && searchTerm) {
+        // If search is active, apply the filter to the new data
+        // This ensures we have the latest data but maintain the filter
+        const filtered = recentLeads?.filter(lead => 
+          lead.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+          lead.phone_number.includes(searchTerm) ||
+          lead.status.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (lead.disposition && lead.disposition.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+        setFilteredLeads(filtered || []);
+      }
     }
   };
 
@@ -345,6 +364,12 @@ const Dashboard: FC = () => {
             
             let successCount = 0;
             let errorCount = 0;
+            
+            // Since we're uploading a new CSV outside a campaign context,
+            // we should clear existing leads to avoid showing mixed data
+            // from different uploads
+            await resetLeads();
+            resetDashboardData();
             
             // Insert leads into the database
             for (const lead of parsedLeads) {
