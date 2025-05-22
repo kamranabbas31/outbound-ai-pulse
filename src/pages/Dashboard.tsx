@@ -1,4 +1,3 @@
-
 import { FC, useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Check, Clock, Phone, AlertCircle, Clock3, DollarSign, FileUp, Play, Pause, Search, X } from "lucide-react";
@@ -67,15 +66,19 @@ const Dashboard: FC = () => {
   const [isViewingCampaign, setIsViewingCampaign] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [currentCampaignId, setCurrentCampaignId] = useState<string | null>(null);
+  const [isDashboardInitialized, setIsDashboardInitialized] = useState(false);
 
   // Load campaign data if campaignId is present in URL
   useEffect(() => {
     if (campaignId) {
       loadCampaignData(campaignId);
+      setIsDashboardInitialized(true);
     } else {
-      // Reset to normal dashboard mode if no campaignId
+      // Reset to normal dashboard mode with empty data if no campaignId
       setIsViewingCampaign(false);
-      fetchLeads();
+      setIsDashboardInitialized(false);
+      // Don't fetch leads unless a campaign has been created
+      resetDashboardData();
     }
     
     return () => {
@@ -89,25 +92,25 @@ const Dashboard: FC = () => {
     };
   }, [campaignId]);
 
-  // Fetch leads on component mount and set up refresh interval
+  // Only fetch leads if we're viewing a campaign or if dashboard has been initialized
   useEffect(() => {
-    if (!campaignId) {
+    if (!campaignId && isDashboardInitialized) {
       fetchLeads();
       
       // Set up a refresh interval to update leads every 5 seconds
       const interval = setInterval(() => {
-        if (!isViewingCampaign) {
+        if (!isViewingCampaign && isDashboardInitialized) {
           fetchLeads();
         }
       }, 5000);
       
       setRefreshInterval(interval);
     }
-  }, [isViewingCampaign, campaignId]);
+  }, [isViewingCampaign, campaignId, isDashboardInitialized]);
 
   // Setup subscription to leads table changes
   useEffect(() => {
-    if (!isViewingCampaign) {
+    if (!isViewingCampaign && isDashboardInitialized) {
       const subscription = supabase
         .channel('public:leads')
         .on('postgres_changes', { 
@@ -124,7 +127,21 @@ const Dashboard: FC = () => {
         supabase.removeChannel(subscription);
       };
     }
-  }, [isViewingCampaign]);
+  }, [isViewingCampaign, isDashboardInitialized]);
+
+  // Reset the dashboard data to zeros
+  const resetDashboardData = () => {
+    setLeads([]);
+    setFilteredLeads([]);
+    setStats({
+      completed: 0,
+      inProgress: 0,
+      remaining: 0,
+      failed: 0,
+      totalDuration: 0,
+      totalCost: 0,
+    });
+  };
 
   // Check if campaign is completed
   useEffect(() => {
@@ -150,6 +167,7 @@ const Dashboard: FC = () => {
   const loadCampaignData = async (id: string) => {
     try {
       setIsViewingCampaign(true);
+      setIsDashboardInitialized(true);
       
       // Fetch campaign details
       const campaign = await fetchCampaignById(id);
@@ -194,7 +212,8 @@ const Dashboard: FC = () => {
     setIsViewingCampaign(false);
     setActiveCampaign(null);
     document.title = "Dashboard - Call Manager";
-    fetchLeads();
+    resetDashboardData();
+    setIsDashboardInitialized(false);
   };
 
   const fetchLeads = async () => {
@@ -315,9 +334,15 @@ const Dashboard: FC = () => {
               // Reset state
               setCurrentCampaignId(null);
               setShowUploadDialog(false);
+              
+              // Set dashboard as initialized since we now have campaign data
+              setIsDashboardInitialized(true);
             }
           } else {
             // Regular upload to the active leads table
+            // Mark dashboard as initialized since we're about to have data
+            setIsDashboardInitialized(true);
+            
             let successCount = 0;
             let errorCount = 0;
             
@@ -527,6 +552,9 @@ const Dashboard: FC = () => {
         return;
       }
       
+      // Reset all dashboard data before creating a new campaign
+      resetDashboardData();
+      
       // Create an empty campaign with the provided name
       const campaign = await createEmptyCampaign(campaignName);
       
@@ -534,9 +562,15 @@ const Dashboard: FC = () => {
         toast.success(`Campaign "${campaignName}" created successfully`);
         setShowNewCampaignDialog(false);
         
-        // Show the upload leads dialog and set the current campaign ID
+        // Show the upload dialog and set the current campaign ID
         setCurrentCampaignId(campaign.id);
         setShowUploadDialog(true);
+        
+        // Set dashboard as initialized since we've created a campaign
+        setIsDashboardInitialized(true);
+        
+        // Update URL to include campaign ID
+        navigate(`/?campaignId=${campaign.id}`, { replace: true });
       } else {
         toast.error("Failed to create campaign");
       }
@@ -639,9 +673,11 @@ const Dashboard: FC = () => {
             ) : (
               // Regular dashboard actions
               <>
-                <Button variant="outline" onClick={fetchLeads}>
-                  Refresh Data
-                </Button>
+                {isDashboardInitialized && (
+                  <Button variant="outline" onClick={fetchLeads}>
+                    Refresh Data
+                  </Button>
+                )}
                 <Button className="bg-primary" onClick={handleNewCampaign}>+ New Campaign</Button>
               </>
             )}
@@ -756,7 +792,7 @@ const Dashboard: FC = () => {
               <Button 
                 className={`${isExecuting ? "bg-red-500 hover:bg-red-600" : "bg-green-500 hover:bg-green-600"} w-full`} 
                 onClick={toggleExecution}
-                disabled={isCallInProgress}
+                disabled={isCallInProgress || !isDashboardInitialized}
               >
                 {isExecuting ? (
                   <>
@@ -925,7 +961,7 @@ const Dashboard: FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredLeads.length > 0 ? (
+                {isDashboardInitialized && filteredLeads.length > 0 ? (
                   filteredLeads.map((lead) => (
                     <TableRow key={lead.id}>
                       <TableCell>{lead.name}</TableCell>
@@ -955,7 +991,9 @@ const Dashboard: FC = () => {
                         ? "No matching leads found." 
                         : isViewingCampaign 
                           ? "No leads found for this campaign." 
-                          : "No leads found. Upload a CSV file to get started."}
+                          : isDashboardInitialized
+                            ? "No leads found. Upload a CSV file to get started."
+                            : "Create a new campaign to get started."}
                     </TableCell>
                   </TableRow>
                 )}
