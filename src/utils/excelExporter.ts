@@ -24,10 +24,7 @@ export const generateCampaignReport = async (campaignId: string, campaignName: s
       'Status': lead.status || '',
       'Disposition': lead.disposition || 'N/A',
       'Duration (minutes)': lead.duration ? (lead.duration / 60).toFixed(2) : '0.00',
-      'Cost ($)': lead.cost ? lead.cost.toFixed(2) : '0.00',
-      'Phone ID': lead.phone_id || 'N/A',
-      'Date Created': lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '',
-      'Time Created': lead.created_at ? new Date(lead.created_at).toLocaleTimeString() : ''
+      'Cost ($)': lead.cost ? lead.cost.toFixed(2) : '0.00'
     }));
     
     // Create workbook and worksheet
@@ -42,10 +39,7 @@ export const generateCampaignReport = async (campaignId: string, campaignName: s
       { wch: 12 },  // Status
       { wch: 15 },  // Disposition
       { wch: 18 },  // Duration
-      { wch: 12 },  // Cost
-      { wch: 15 },  // Phone ID
-      { wch: 15 },  // Date Created
-      { wch: 15 }   // Time Created
+      { wch: 12 }   // Cost
     ];
     worksheet['!cols'] = columnWidths;
     
