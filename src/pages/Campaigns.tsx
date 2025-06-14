@@ -5,6 +5,16 @@ import { fetchCampaigns } from "@/services/campaignService";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Download, RefreshCw } from "lucide-react";
+import { generateCampaignReport } from "@/utils/excelExporter";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface Campaign {
   id: string;
@@ -24,6 +34,7 @@ interface Campaign {
 const Campaigns: FC = () => {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [downloadingCampaigns, setDownloadingCampaigns] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -80,6 +91,31 @@ const Campaigns: FC = () => {
     toast.success("Campaigns refreshed");
   };
 
+  const handleDownloadReport = async (campaign: Campaign, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent row click
+    
+    if (campaign.leads_count === 0) {
+      toast.error("No leads found in this campaign to export");
+      return;
+    }
+    
+    setDownloadingCampaigns(prev => new Set(prev).add(campaign.id));
+    
+    try {
+      await generateCampaignReport(campaign.id, campaign.name);
+      toast.success(`Campaign report downloaded successfully`);
+    } catch (error) {
+      console.error("Error downloading campaign report:", error);
+      toast.error("Failed to download campaign report");
+    } finally {
+      setDownloadingCampaigns(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(campaign.id);
+        return newSet;
+      });
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -88,6 +124,7 @@ const Campaigns: FC = () => {
           <p className="text-muted-foreground">View and manage your calling campaigns</p>
         </div>
         <Button onClick={handleRefresh} variant="outline" className="ml-auto">
+          <RefreshCw className="w-4 h-4 mr-2" />
           Refresh
         </Button>
       </div>
@@ -98,60 +135,71 @@ const Campaigns: FC = () => {
           <p className="text-sm text-muted-foreground">List of all your uploaded campaign files and their statuses</p>
         </div>
         <div className="p-0">
-          <div className="relative w-full overflow-auto">
-            <table className="w-full caption-bottom text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Campaign Name</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">File Name</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Status</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Leads</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Completed</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">In Progress</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Remaining</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Failed</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Duration (min)</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Cost ($)</th>
-                  <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Date Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr className="h-[100px]">
-                    <td colSpan={11} className="text-center text-muted-foreground">
-                      Loading campaigns...
-                    </td>
-                  </tr>
-                ) : campaigns.length > 0 ? (
-                  campaigns.map((campaign) => (
-                    <tr 
-                      key={campaign.id} 
-                      className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
-                      onClick={() => handleCampaignClick(campaign.id)}
-                    >
-                      <td className="p-4 align-middle">{campaign.name}</td>
-                      <td className="p-4 align-middle">{campaign.file_name || '-'}</td>
-                      <td className="p-4 align-middle">{getStatusBadge(campaign.status)}</td>
-                      <td className="p-4 align-middle">{campaign.leads_count}</td>
-                      <td className="p-4 align-middle">{campaign.completed}</td>
-                      <td className="p-4 align-middle">{campaign.in_progress}</td>
-                      <td className="p-4 align-middle">{campaign.remaining}</td>
-                      <td className="p-4 align-middle">{campaign.failed}</td>
-                      <td className="p-4 align-middle">{campaign.duration.toFixed(1)}</td>
-                      <td className="p-4 align-middle">${campaign.cost.toFixed(2)}</td>
-                      <td className="p-4 align-middle">{formatDate(campaign.created_at)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr className="h-[100px]">
-                    <td colSpan={11} className="text-center text-muted-foreground">
-                      No campaigns found. Create a new campaign to get started.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Campaign Name</TableHead>
+                <TableHead>File Name</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Leads</TableHead>
+                <TableHead>Completed</TableHead>
+                <TableHead>In Progress</TableHead>
+                <TableHead>Remaining</TableHead>
+                <TableHead>Failed</TableHead>
+                <TableHead>Duration (min)</TableHead>
+                <TableHead>Cost ($)</TableHead>
+                <TableHead>Date Created</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={12} className="h-[100px] text-center text-muted-foreground">
+                    Loading campaigns...
+                  </TableCell>
+                </TableRow>
+              ) : campaigns.length > 0 ? (
+                campaigns.map((campaign) => (
+                  <TableRow 
+                    key={campaign.id} 
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => handleCampaignClick(campaign.id)}
+                  >
+                    <TableCell>{campaign.name}</TableCell>
+                    <TableCell>{campaign.file_name || '-'}</TableCell>
+                    <TableCell>{getStatusBadge(campaign.status)}</TableCell>
+                    <TableCell>{campaign.leads_count}</TableCell>
+                    <TableCell>{campaign.completed}</TableCell>
+                    <TableCell>{campaign.in_progress}</TableCell>
+                    <TableCell>{campaign.remaining}</TableCell>
+                    <TableCell>{campaign.failed}</TableCell>
+                    <TableCell>{campaign.duration.toFixed(1)}</TableCell>
+                    <TableCell>${campaign.cost.toFixed(2)}</TableCell>
+                    <TableCell>{formatDate(campaign.created_at)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => handleDownloadReport(campaign, e)}
+                        disabled={downloadingCampaigns.has(campaign.id) || campaign.leads_count === 0}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        {downloadingCampaigns.has(campaign.id) ? 'Downloading...' : 'Export'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={12} className="h-[100px] text-center text-muted-foreground">
+                    No campaigns found. Create a new campaign to get started.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
     </div>
