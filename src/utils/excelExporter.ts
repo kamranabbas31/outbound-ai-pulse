@@ -23,6 +23,7 @@ export const generateCampaignReport = async (campaignId: string, campaignName: s
       'Phone Number': lead.phone_number || '',
       'Status': lead.status || '',
       'Disposition': lead.disposition || 'N/A',
+      'End Call Reason': lead.end_call_reason || 'N/A',
       'Duration (minutes)': lead.duration ? (lead.duration / 60).toFixed(2) : '0.00',
       'Cost ($)': lead.cost ? lead.cost.toFixed(2) : '0.00'
     }));
@@ -38,6 +39,7 @@ export const generateCampaignReport = async (campaignId: string, campaignName: s
       { wch: 15 },  // Phone Number
       { wch: 12 },  // Status
       { wch: 15 },  // Disposition
+      { wch: 18 },  // End Call Reason
       { wch: 18 },  // Duration
       { wch: 12 }   // Cost
     ];
