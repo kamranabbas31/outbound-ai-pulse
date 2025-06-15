@@ -80,7 +80,7 @@ serve(async (req) => {
 
     // Prepare the payload for Vapi
     const payload = {
-      assistantId: "40664072-59ad-4106-9d5d-1fd5ed5dacbe", // Using the ID provided by user
+      assistantId: "48b1e44a-c1ff-4f4e-a9e0-7b1e03f197ea", // Updated assistant ID
       assistantOverrides: {
         variableValues: {
           Name: lead.name,
