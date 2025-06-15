@@ -284,41 +284,117 @@ function extractDisposition(payload) {
   
   console.log("Disposition extraction - endReason:", endReason, "summary:", summary ? "present" : "missing", "transcript:", transcript ? "present" : "missing");
   
-  // Determine disposition based on end_reason first
+  // Combine summary and transcript for content analysis
+  const content = ((summary || "") + " " + (transcript || "")).toLowerCase();
+  
+  // Check for Answering Machine first (highest priority for voicemail indicators)
+  if (content.includes("leave a message") || 
+      content.includes("at the tone") || 
+      content.includes("voicemail") || 
+      content.includes("can't take your call") ||
+      content.includes("not available") && content.includes("message")) {
+    return "Answering Machine";
+  }
+  
+  // Check for No Answer based on end reason
+  if (endReason && (
+      endReason.toLowerCase().includes("customer did not answer") ||
+      endReason.toLowerCase().includes("twilio failed connection") ||
+      endReason.toLowerCase().includes("no answer") ||
+      endReason.toLowerCase().includes("unanswered"))) {
+    return "No Answer";
+  }
+  
+  // Check for Warm Transfers based on end reason and content
+  if (endReason && endReason.toLowerCase().includes("assistant forwarded call")) {
+    if (content.includes("education consultant") || 
+        content.includes("forwarded to education") ||
+        content.includes("transferred to education")) {
+      return "Warm Transfer - Education";
+    }
+    if (content.includes("job consultant") || 
+        content.includes("forwarded to job") ||
+        content.includes("transferred to job")) {
+      return "Warm Transfer - Job";
+    }
+    // Generic warm transfer if specific type not identified
+    return "Warm Transfer - Education"; // Default to education if not specified
+  }
+  
+  // Check for Hang Up based on end reason
+  if (endReason && endReason.toLowerCase().includes("customer ended call")) {
+    return "Hang Up";
+  }
+  
+  // Check for Do Not Contact
+  if (content.includes("do not call") || 
+      content.includes("remove me") || 
+      content.includes("stop calling") ||
+      content.includes("take me off") ||
+      content.includes("don't call")) {
+    return "Do Not Contact";
+  }
+  
+  // Check for Not Qualified
+  if (content.includes("not qualified") || 
+      content.includes("qualification failed") ||
+      content.includes("no high school diploma") ||
+      content.includes("no ged") ||
+      content.includes("under 18") ||
+      content.includes("not a us citizen") ||
+      content.includes("no green card") ||
+      content.includes("currently enrolled in school") ||
+      content.includes("currently enrolled in college") ||
+      content.includes("already in school") ||
+      content.includes("already in college")) {
+    return "Not Qualified";
+  }
+  
+  // Check for Language Barrier
+  if (content.includes("language barrier") || 
+      content.includes("can't understand") ||
+      content.includes("don't speak english") ||
+      content.includes("no english") ||
+      content.includes("communication issue") ||
+      content.includes("language problem")) {
+    return "Language Barrier";
+  }
+  
+  // Check for Not Interested
+  if (content.includes("not interested") || 
+      content.includes("no thanks") || 
+      content.includes("not right now") ||
+      content.includes("don't want") ||
+      content.includes("no thank you") ||
+      content.includes("not for me")) {
+    return "Not Interested";
+  }
+  
+  // If we reach here and have an end reason, try to map common ones
   if (endReason) {
     switch (endReason.toLowerCase()) {
       case 'user_hung_up':
       case 'hangup':
-        return analyzeCallOutcome(summary, transcript, "Hung Up");
-        
-      case 'assistant_hung_up':
-        return analyzeCallOutcome(summary, transcript, "Call Completed");
+        return "Hang Up";
         
       case 'user_busy':
       case 'busy':
-        return "Busy";
-        
-      case 'no_answer':
-      case 'unanswered':
         return "No Answer";
         
       case 'voicemail':
-        return "Voicemail";
+        return "Answering Machine";
         
       case 'failed':
       case 'error':
-        return "Failed";
+        return "No Answer";
         
       case 'timeout':
-        return "Timeout";
-        
-      default:
-        return analyzeCallOutcome(summary, transcript, "Unknown");
+        return "No Answer";
     }
   }
   
-  // If no end_reason, try to determine from summary and transcript
-  return analyzeCallOutcome(summary, transcript, "Unknown");
+  // Default fallback
+  return "Unknown";
 }
 
 // Analyze call outcome based on summary and transcript content
