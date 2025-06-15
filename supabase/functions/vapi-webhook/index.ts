@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 // Define CORS headers for browser requests
@@ -66,7 +65,7 @@ serve(async (req) => {
     phoneNumber = extractPhoneNumber(payload);
     console.log("Extracted phone number:", phoneNumber);
     
-    // Extract disposition
+    // Extract disposition using new logic
     disposition = extractDisposition(payload);
     console.log("Extracted disposition:", disposition);
     
@@ -258,45 +257,119 @@ function extractCustomerName(payload) {
 
 // Extract disposition from analysis data
 function extractDisposition(payload) {
-  if (payload.message && payload.message.analysis) {
-    if (payload.message.analysis.successEvaluation) {
-      try {
-        const evaluationData = JSON.parse(payload.message.analysis.successEvaluation);
-        if (evaluationData && evaluationData.disposition) {
-          return evaluationData.disposition;
-        }
-      } catch (e) {
-        // If not valid JSON, use as raw string
-        return payload.message.analysis.successEvaluation;
-      }
-    }
-    
-    if (payload.message.analysis.structuredData) {
-      const sd = payload.message.analysis.structuredData;
-      
-      if (sd.disposition) {
-        return sd.disposition;
-      } else if (sd.customer_objection) {
-        return sd.customer_objection;
-      } else if (sd.call_reason) {
-        return `Call reason: ${sd.call_reason}`;
-      } else if (sd.outcome) {
-        return `Outcome: ${sd.outcome}`;
-      } else if (sd.summary) {
-        // Extract first sentence if it's a long summary
-        const summary = sd.summary;
-        return summary.length > 50 ? summary.split('.')[0] + '.' : summary;
-      }
-    }
-    
-    // Try the summary as a last resort
-    if (payload.message.analysis.summary) {
-      const summary = payload.message.analysis.summary;
-      return summary.length > 50 ? summary.split('.')[0] + '.' : summary;
+  let endReason = null;
+  let summary = null;
+  let transcript = null;
+  
+  // Extract end_reason
+  if (payload.endReason) {
+    endReason = payload.endReason;
+  } else if (payload.message && payload.message.endReason) {
+    endReason = payload.message.endReason;
+  }
+  
+  // Extract summary
+  if (payload.message && payload.message.analysis && payload.message.analysis.summary) {
+    summary = payload.message.analysis.summary;
+  } else if (payload.summary) {
+    summary = payload.summary;
+  }
+  
+  // Extract transcript
+  if (payload.transcript) {
+    transcript = payload.transcript;
+  } else if (payload.message && payload.message.transcript) {
+    transcript = payload.message.transcript;
+  }
+  
+  console.log("Disposition extraction - endReason:", endReason, "summary:", summary ? "present" : "missing", "transcript:", transcript ? "present" : "missing");
+  
+  // Determine disposition based on end_reason first
+  if (endReason) {
+    switch (endReason.toLowerCase()) {
+      case 'user_hung_up':
+      case 'hangup':
+        return analyzeCallOutcome(summary, transcript, "Hung Up");
+        
+      case 'assistant_hung_up':
+        return analyzeCallOutcome(summary, transcript, "Call Completed");
+        
+      case 'user_busy':
+      case 'busy':
+        return "Busy";
+        
+      case 'no_answer':
+      case 'unanswered':
+        return "No Answer";
+        
+      case 'voicemail':
+        return "Voicemail";
+        
+      case 'failed':
+      case 'error':
+        return "Failed";
+        
+      case 'timeout':
+        return "Timeout";
+        
+      default:
+        return analyzeCallOutcome(summary, transcript, "Unknown");
     }
   }
   
-  return "Unknown";
+  // If no end_reason, try to determine from summary and transcript
+  return analyzeCallOutcome(summary, transcript, "Unknown");
+}
+
+// Analyze call outcome based on summary and transcript content
+function analyzeCallOutcome(summary, transcript, fallback) {
+  const content = (summary || "") + " " + (transcript || "");
+  const lowerContent = content.toLowerCase();
+  
+  // Check for positive outcomes
+  if (lowerContent.includes("interested") || 
+      lowerContent.includes("appointment") || 
+      lowerContent.includes("callback") || 
+      lowerContent.includes("schedule") ||
+      lowerContent.includes("meeting") ||
+      lowerContent.includes("yes") && lowerContent.includes("interested")) {
+    return "Interested";
+  }
+  
+  // Check for negative outcomes
+  if (lowerContent.includes("not interested") || 
+      lowerContent.includes("no thank") || 
+      lowerContent.includes("don't want") ||
+      lowerContent.includes("remove") && lowerContent.includes("list") ||
+      lowerContent.includes("stop calling")) {
+    return "Not Interested";
+  }
+  
+  // Check for specific objections
+  if (lowerContent.includes("too expensive") || 
+      lowerContent.includes("can't afford") ||
+      lowerContent.includes("price") && lowerContent.includes("high")) {
+    return "Price Objection";
+  }
+  
+  if (lowerContent.includes("think about") || 
+      lowerContent.includes("call back later") ||
+      lowerContent.includes("need time")) {
+    return "Needs Time";
+  }
+  
+  if (lowerContent.includes("wrong number") || 
+      lowerContent.includes("wrong person")) {
+    return "Wrong Number";
+  }
+  
+  if (lowerContent.includes("already have") || 
+      lowerContent.includes("current provider")) {
+    return "Already Has Service";
+  }
+  
+  // Return the fallback if no specific outcome detected
+  return fallback;
 }
 
 // Extract call duration from various possible locations
