@@ -55,7 +55,7 @@ export default function LeadsTable({
       const parsedData = parseCSV(csvData);
 
       if (!campaignId) {
-        toast({
+        toast.custom({
           title: "Error!",
           description: "Please select a campaign to upload leads to.",
           variant: "destructive",
@@ -71,7 +71,7 @@ export default function LeadsTable({
       });
 
       if (error) {
-        toast({
+        toast.custom({
           title: "Error!",
           description: "Failed to upload leads. " + error.message,
           variant: "destructive",
@@ -79,7 +79,7 @@ export default function LeadsTable({
         return;
       }
 
-      toast({
+      toast.custom({
         title: "Success!",
         description: "Leads uploaded successfully.",
       });
@@ -100,7 +100,7 @@ export default function LeadsTable({
 
   const handleExportToExcel = async () => {
     if (!leads) {
-      toast({
+      toast.custom({
         title: "Error!",
         description: "No leads to export.",
         variant: "destructive",
@@ -109,7 +109,7 @@ export default function LeadsTable({
     }
 
     if (!campaign) {
-      toast({
+      toast.custom({
         title: "Error!",
         description: "No campaign to export.",
         variant: "destructive",
@@ -119,12 +119,12 @@ export default function LeadsTable({
 
     try {
       await generateCampaignReport(campaign.id, campaign.name);
-      toast({
+      toast.custom({
         title: "Success!",
         description: "Report exported successfully.",
       });
     } catch (error) {
-      toast({
+      toast.custom({
         title: "Error!",
         description: "Failed to export report.",
         variant: "destructive",
@@ -140,7 +140,7 @@ export default function LeadsTable({
     });
 
     if (error) {
-      toast({
+      toast.custom({
         title: "Error!",
         description: "Failed to trigger call. " + error.message,
         variant: "destructive",
@@ -148,7 +148,7 @@ export default function LeadsTable({
       return;
     }
 
-    toast({
+    toast.custom({
       title: "Success!",
       description: "Call triggered successfully.",
     });

@@ -41,7 +41,7 @@ export const useDashboardData = (campaignId: string | null) => {
           .eq('campaign_id', campaignId);
 
         if (campaignLeadsError) {
-          toast({
+          toast.custom({
             title: "Error!",
             description: "Failed to fetch campaign leads. " + campaignLeadsError.message,
             variant: "destructive",
@@ -61,7 +61,7 @@ export const useDashboardData = (campaignId: string | null) => {
           .in('id', leadIds);
 
         if (error) {
-          toast({
+          toast.custom({
             title: "Error!",
             description: "Failed to fetch leads. " + error.message,
             variant: "destructive",
@@ -74,7 +74,7 @@ export const useDashboardData = (campaignId: string | null) => {
           .from('leads')
           .select('*');
         if (error) {
-          toast({
+          toast.custom({
             title: "Error!",
             description: "Failed to fetch leads. " + error.message,
             variant: "destructive",
@@ -96,7 +96,7 @@ export const useDashboardData = (campaignId: string | null) => {
           .eq('id', campaignId)
           .single();
         if (error) {
-          toast({
+          toast.custom({
             title: "Error!",
             description: "Failed to fetch campaign. " + error.message,
             variant: "destructive",
