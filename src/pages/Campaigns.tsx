@@ -1,11 +1,12 @@
+
 import { useState } from "react";
-import { Layout } from "@/components/Layout";
+import Layout from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Play, Pause, BarChart3 } from "lucide-react";
+import { Plus, BarChart3 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -34,9 +35,9 @@ export default function Campaigns() {
   // Enable real-time updates for all campaigns
   useRealtimeLeads();
 
-  const { data: campaigns, isLoading, error, refetch } = useQuery<Campaign[]>(
-    ["campaigns"],
-    async () => {
+  const { data: campaigns, isLoading, error, refetch } = useQuery({
+    queryKey: ["campaigns"],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from("campaigns")
         .select("*")
@@ -47,7 +48,7 @@ export default function Campaigns() {
       }
       return data || [];
     }
-  );
+  });
 
   const handleCreateCampaign = async () => {
     if (newCampaignName.trim() === "") {
@@ -88,7 +89,7 @@ export default function Campaigns() {
   };
 
   if (isLoading) return <p>Loading campaigns...</p>;
-  if (error) return <p>Error: {error.message}</p>;
+  if (error) return <p>Error: {(error as Error).message}</p>;
 
   return (
     <Layout>
