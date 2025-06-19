@@ -1,6 +1,5 @@
 
 import { useState } from "react";
-import Layout from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,74 +91,72 @@ export default function Campaigns() {
   if (error) return <p>Error: {error.message}</p>;
 
   return (
-    <Layout>
-      <div className="container mx-auto py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Campaigns</CardTitle>
-            <CardDescription>Manage your calling campaigns.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              <div className="flex items-center space-x-2">
-                <Input
-                  type="text"
-                  placeholder="New campaign name"
-                  value={newCampaignName}
-                  onChange={(e) => setNewCampaignName(e.target.value)}
-                />
-                <Button onClick={handleCreateCampaign}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Campaign
-                </Button>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Leads</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Cost</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Completed</TableHead>
-                    <TableHead>Failed</TableHead>
-                    <TableHead>In Progress</TableHead>
-                    <TableHead>Remaining</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {campaigns?.map((campaign) => (
-                    <TableRow key={campaign.id}>
-                      <TableCell>{campaign.name}</TableCell>
-                      <TableCell>{campaign.leads_count}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{campaign.status}</Badge>
-                      </TableCell>
-                      <TableCell>{campaign.cost}</TableCell>
-                      <TableCell>{campaign.duration}</TableCell>
-                      <TableCell>{campaign.completed}</TableCell>
-                      <TableCell>{campaign.failed}</TableCell>
-                      <TableCell>{campaign.in_progress}</TableCell>
-                      <TableCell>{campaign.remaining}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleCampaignClick(campaign.id)}
-                        >
-                          <BarChart3 className="mr-2 h-4 w-4" />
-                          View Stats
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+    <div className="container mx-auto py-10">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Campaigns</CardTitle>
+          <CardDescription>Manage your calling campaigns.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4">
+            <div className="flex items-center space-x-2">
+              <Input
+                type="text"
+                placeholder="New campaign name"
+                value={newCampaignName}
+                onChange={(e) => setNewCampaignName(e.target.value)}
+              />
+              <Button onClick={handleCreateCampaign}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Campaign
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
-    </Layout>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Leads</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Cost</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Completed</TableHead>
+                  <TableHead>Failed</TableHead>
+                  <TableHead>In Progress</TableHead>
+                  <TableHead>Remaining</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {campaigns?.map((campaign) => (
+                  <TableRow key={campaign.id}>
+                    <TableCell>{campaign.name}</TableCell>
+                    <TableCell>{campaign.leads_count}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{campaign.status}</Badge>
+                    </TableCell>
+                    <TableCell>{campaign.cost}</TableCell>
+                    <TableCell>{campaign.duration}</TableCell>
+                    <TableCell>{campaign.completed}</TableCell>
+                    <TableCell>{campaign.failed}</TableCell>
+                    <TableCell>{campaign.in_progress}</TableCell>
+                    <TableCell>{campaign.remaining}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCampaignClick(campaign.id)}
+                      >
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        View Stats
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
