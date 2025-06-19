@@ -1,6 +1,5 @@
 
 import { useState } from "react";
-import Layout from "@/components/Layout";
 import StatCard from "@/components/StatCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -239,104 +238,102 @@ export default function Dashboard() {
   };
 
   return (
-    <Layout>
-      <div className="flex flex-col gap-4">
-        {campaign && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <StatCard
-              title="Total Leads"
-              value={campaign?.leads_count || 0}
-              description="Total leads in campaign"
-              icon={<FileSpreadsheet className="h-6 w-6" />}
-            />
-            <StatCard
-              title="Completed"
-              value={campaign?.completed || 0}
-              description="Calls completed"
-              icon={<Phone className="h-6 w-6" />}
-            />
-            <StatCard
-              title="Failed"
-              value={campaign?.failed || 0}
-              description="Failed calls"
-              icon={<Phone className="h-6 w-6" />}
-            />
-            <StatCard
-              title="Remaining"
-              value={campaign?.remaining || 0}
-              description="Leads remaining"
-              icon={<Phone className="h-6 w-6" />}
-            />
-          </div>
-        )}
+    <div className="flex flex-col gap-4">
+      {campaign && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Leads"
+            value={campaign?.leads_count || 0}
+            description="Total leads in campaign"
+            icon={<FileSpreadsheet className="h-6 w-6" />}
+          />
+          <StatCard
+            title="Completed"
+            value={campaign?.completed || 0}
+            description="Calls completed"
+            icon={<Phone className="h-6 w-6" />}
+          />
+          <StatCard
+            title="Failed"
+            value={campaign?.failed || 0}
+            description="Failed calls"
+            icon={<Phone className="h-6 w-6" />}
+          />
+          <StatCard
+            title="Remaining"
+            value={campaign?.remaining || 0}
+            description="Leads remaining"
+            icon={<Phone className="h-6 w-6" />}
+          />
+        </div>
+      )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Leads</CardTitle>
-            <CardDescription>Manage your leads and upload new ones.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <Input type="file" id="upload" className="hidden" onChange={handleFileUpload} />
-                <Button asChild disabled={isUploading}>
-                  <label htmlFor="upload" className="flex items-center gap-2">
-                    <Upload className="h-4 w-4" />
-                    Upload Leads
-                  </label>
-                </Button>
-                <Button variant="outline" className="ml-2" onClick={handleExportToExcel}>
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Export to Excel
-                </Button>
-              </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Leads</CardTitle>
+          <CardDescription>Manage your leads and upload new ones.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <Input type="file" id="upload" className="hidden" onChange={handleFileUpload} />
+              <Button asChild disabled={isUploading}>
+                <label htmlFor="upload" className="flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  Upload Leads
+                </label>
+              </Button>
+              <Button variant="outline" className="ml-2" onClick={handleExportToExcel}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export to Excel
+              </Button>
             </div>
-            <Table>
-              <TableHeader>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Phone Number</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Disposition</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoadingLeads ? (
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Phone Number</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Disposition</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableCell colSpan={5} className="text-center">
+                    Loading...
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoadingLeads ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center">
-                      Loading...
+              ) : leads?.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center">
+                    No leads found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                leads?.map((lead) => (
+                  <TableRow key={lead.id}>
+                    <TableCell>{lead.name}</TableCell>
+                    <TableCell>{lead.phone_number}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{lead.status}</Badge>
+                    </TableCell>
+                    <TableCell>{lead.disposition}</TableCell>
+                    <TableCell>
+                      <Button size="sm" onClick={() => handleCallLead(lead.id)}>
+                        <Phone className="h-4 w-4 mr-2" />
+                        Call
+                      </Button>
                     </TableCell>
                   </TableRow>
-                ) : leads?.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center">
-                      No leads found.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  leads?.map((lead) => (
-                    <TableRow key={lead.id}>
-                      <TableCell>{lead.name}</TableCell>
-                      <TableCell>{lead.phone_number}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{lead.status}</Badge>
-                      </TableCell>
-                      <TableCell>{lead.disposition}</TableCell>
-                      <TableCell>
-                        <Button size="sm" onClick={() => handleCallLead(lead.id)}>
-                          <Phone className="h-4 w-4 mr-2" />
-                          Call
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-    </Layout>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
