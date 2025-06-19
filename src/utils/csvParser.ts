@@ -65,8 +65,16 @@ export const parseCSV = (content: string): { name: string, phoneNumber: string }
         const name = values[nameIndex].trim();
         let phoneNumber = values[phoneIndex].trim();
         
-        // Normalize phone number format (remove non-numeric characters)
+        // Normalize phone number format (remove non-numeric characters except +)
         phoneNumber = phoneNumber.replace(/[^\d+]/g, '');
+        
+        // Add +1 if the number doesn't already start with +1 or +
+        if (phoneNumber && !phoneNumber.startsWith('+')) {
+          phoneNumber = '+1' + phoneNumber;
+        } else if (phoneNumber.startsWith('+') && !phoneNumber.startsWith('+1')) {
+          // If it starts with + but not +1, assume it's missing the 1
+          phoneNumber = '+1' + phoneNumber.substring(1);
+        }
         
         if (name && phoneNumber) {
           results.push({ name, phoneNumber });
