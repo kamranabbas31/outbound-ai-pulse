@@ -1,209 +1,164 @@
-
-import { FC, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { fetchCampaigns } from "@/services/campaignService";
-import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Layout } from "@/components/Layout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, RefreshCw } from "lucide-react";
-import { generateCampaignReport } from "@/utils/excelExporter";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Plus, Play, Pause, BarChart3 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
+import { useRealtimeLeads } from "@/hooks/useRealtimeLeads";
+import { useToast } from "@/hooks/use-toast";
 
 interface Campaign {
   id: string;
+  created_at: string;
   name: string;
-  file_name: string | null;
-  status: string;
   leads_count: number;
+  status: string;
+  cost: number;
+  duration: number;
   completed: number;
+  failed: number;
   in_progress: number;
   remaining: number;
-  failed: number;
-  duration: number;
-  cost: number;
-  created_at: string;
 }
 
-const Campaigns: FC = () => {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [downloadingCampaigns, setDownloadingCampaigns] = useState<Set<string>>(new Set());
+export default function Campaigns() {
+  const [newCampaignName, setNewCampaignName] = useState("");
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  useEffect(() => {
-    loadCampaigns();
-  }, []);
+  // Enable real-time updates for all campaigns
+  useRealtimeLeads();
 
-  const loadCampaigns = async () => {
-    setIsLoading(true);
-    try {
-      const data = await fetchCampaigns();
-      console.log("Loaded campaigns:", data);
-      setCampaigns(data);
-    } catch (error) {
-      console.error("Error loading campaigns:", error);
-      toast.error("Failed to load campaigns");
-    } finally {
-      setIsLoading(false);
+  const { data: campaigns, isLoading, error, refetch } = useQuery<Campaign[]>(
+    ["campaigns"],
+    async () => {
+      const { data, error } = await supabase
+        .from("campaigns")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching campaigns:", error);
+        throw error;
+      }
+      return data || [];
     }
-  };
+  );
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "in-progress":
-        return <Badge className="bg-blue-500 hover:bg-blue-600">In Progress</Badge>;
-      case "completed":
-        return <Badge className="bg-green-500 hover:bg-green-600">Completed</Badge>;
-      case "stopped":
-        return <Badge variant="outline" className="text-gray-500 border-gray-300">Stopped</Badge>;
-      case "paused":
-        return <Badge variant="outline" className="text-amber-500 border-amber-300">Paused</Badge>;
-      case "pending":
-        return <Badge variant="outline" className="text-purple-500 border-purple-300">Pending</Badge>;
-      case "partial":
-        return <Badge className="bg-amber-500 hover:bg-amber-600">Partial</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  const handleCreateCampaign = async () => {
+    if (newCampaignName.trim() === "") {
+      toast({
+        title: "Error",
+        description: "Campaign name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
     }
-  };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    const { data, error } = await supabase
+      .from("campaigns")
+      .insert([{ name: newCampaignName }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating campaign:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create campaign.",
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Success",
+        description: "Campaign created successfully.",
+      });
+      setNewCampaignName("");
+      refetch();
+      navigate(`/campaigns?campaignId=${data.id}`);
+    }
   };
 
   const handleCampaignClick = (campaignId: string) => {
-    navigate(`/?campaignId=${campaignId}`);
+    navigate(`/campaigns?campaignId=${campaignId}`);
   };
 
-  const handleRefresh = () => {
-    loadCampaigns();
-    toast.success("Campaigns refreshed");
-  };
-
-  const handleDownloadReport = async (campaign: Campaign, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent row click
-    
-    if (campaign.leads_count === 0) {
-      toast.error("No leads found in this campaign to export");
-      return;
-    }
-    
-    setDownloadingCampaigns(prev => new Set(prev).add(campaign.id));
-    
-    try {
-      await generateCampaignReport(campaign.id, campaign.name);
-      toast.success(`Campaign report downloaded successfully`);
-    } catch (error) {
-      console.error("Error downloading campaign report:", error);
-      toast.error("Failed to download campaign report");
-    } finally {
-      setDownloadingCampaigns(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(campaign.id);
-        return newSet;
-      });
-    }
-  };
+  if (isLoading) return <p>Loading campaigns...</p>;
+  if (error) return <p>Error: {error.message}</p>;
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
-        <div className="flex flex-col space-y-2">
-          <h2 className="text-2xl font-bold">Campaigns</h2>
-          <p className="text-muted-foreground">View and manage your calling campaigns</p>
-        </div>
-        <Button onClick={handleRefresh} variant="outline" className="ml-auto">
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
-
-      <div className="bg-white shadow-sm rounded-lg border overflow-hidden">
-        <div className="p-6 border-b">
-          <h3 className="text-lg font-semibold">Campaign History</h3>
-          <p className="text-sm text-muted-foreground">List of all your uploaded campaign files and their statuses</p>
-        </div>
-        <div className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Campaign Name</TableHead>
-                <TableHead>File Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Leads</TableHead>
-                <TableHead>Completed</TableHead>
-                <TableHead>In Progress</TableHead>
-                <TableHead>Remaining</TableHead>
-                <TableHead>Failed</TableHead>
-                <TableHead>Duration (min)</TableHead>
-                <TableHead>Cost ($)</TableHead>
-                <TableHead>Date Created</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={12} className="h-[100px] text-center text-muted-foreground">
-                    Loading campaigns...
-                  </TableCell>
-                </TableRow>
-              ) : campaigns.length > 0 ? (
-                campaigns.map((campaign) => (
-                  <TableRow 
-                    key={campaign.id} 
-                    className="cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => handleCampaignClick(campaign.id)}
-                  >
-                    <TableCell>{campaign.name}</TableCell>
-                    <TableCell>{campaign.file_name || '-'}</TableCell>
-                    <TableCell>{getStatusBadge(campaign.status)}</TableCell>
-                    <TableCell>{campaign.leads_count}</TableCell>
-                    <TableCell>{campaign.completed}</TableCell>
-                    <TableCell>{campaign.in_progress}</TableCell>
-                    <TableCell>{campaign.remaining}</TableCell>
-                    <TableCell>{campaign.failed}</TableCell>
-                    <TableCell>{campaign.duration.toFixed(1)}</TableCell>
-                    <TableCell>${campaign.cost.toFixed(2)}</TableCell>
-                    <TableCell>{formatDate(campaign.created_at)}</TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => handleDownloadReport(campaign, e)}
-                        disabled={downloadingCampaigns.has(campaign.id) || campaign.leads_count === 0}
-                        className="flex items-center gap-2"
-                      >
-                        <Download className="w-4 h-4" />
-                        {downloadingCampaigns.has(campaign.id) ? 'Downloading...' : 'Export'}
-                      </Button>
-                    </TableCell>
+    <Layout>
+      <div className="container mx-auto py-10">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Campaigns</CardTitle>
+            <CardDescription>Manage your calling campaigns.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4">
+              <div className="flex items-center space-x-2">
+                <Input
+                  type="text"
+                  placeholder="New campaign name"
+                  value={newCampaignName}
+                  onChange={(e) => setNewCampaignName(e.target.value)}
+                />
+                <Button onClick={handleCreateCampaign}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Campaign
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Leads</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Cost</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Completed</TableHead>
+                    <TableHead>Failed</TableHead>
+                    <TableHead>In Progress</TableHead>
+                    <TableHead>Remaining</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={12} className="h-[100px] text-center text-muted-foreground">
-                    No campaigns found. Create a new campaign to get started.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {campaigns?.map((campaign) => (
+                    <TableRow key={campaign.id}>
+                      <TableCell>{campaign.name}</TableCell>
+                      <TableCell>{campaign.leads_count}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{campaign.status}</Badge>
+                      </TableCell>
+                      <TableCell>{campaign.cost}</TableCell>
+                      <TableCell>{campaign.duration}</TableCell>
+                      <TableCell>{campaign.completed}</TableCell>
+                      <TableCell>{campaign.failed}</TableCell>
+                      <TableCell>{campaign.in_progress}</TableCell>
+                      <TableCell>{campaign.remaining}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCampaignClick(campaign.id)}
+                        >
+                          <BarChart3 className="mr-2 h-4 w-4" />
+                          View Stats
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </Layout>
   );
-};
-
-export default Campaigns;
+}
