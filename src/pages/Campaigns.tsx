@@ -10,7 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useRealtimeLeads } from "@/hooks/useRealtimeLeads";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 
 interface Campaign {
   id: string;
@@ -51,7 +51,7 @@ export default function Campaigns() {
 
   const handleCreateCampaign = async () => {
     if (newCampaignName.trim() === "") {
-      toast({
+      toast.custom({
         title: "Error",
         description: "Campaign name cannot be empty.",
         variant: "destructive",
@@ -67,13 +67,13 @@ export default function Campaigns() {
 
     if (error) {
       console.error("Error creating campaign:", error);
-      toast({
+      toast.custom({
         title: "Error",
         description: "Failed to create campaign.",
         variant: "destructive",
       });
     } else {
-      toast({
+      toast.custom({
         title: "Success",
         description: "Campaign created successfully.",
       });
