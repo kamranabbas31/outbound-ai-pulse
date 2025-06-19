@@ -1,19 +1,20 @@
+
 import { useState } from "react";
-import { Layout } from "@/components/Layout";
-import { StatCard } from "@/components/StatCard";
+import Layout from "@/components/Layout";
+import StatCard from "@/components/StatCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Phone, Upload, Play, FileSpreadsheet } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSearchParams } from "react-router-dom";
 import { useRealtimeLeads } from "@/hooks/useRealtimeLeads";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/components/ui/use-toast";
 import { parseCSV } from "@/utils/csvParser";
-import { exportToExcel } from "@/utils/excelExporter";
+import { generateCampaignReport } from "@/utils/excelExporter";
 
 interface Lead {
   id: string;
@@ -53,39 +54,56 @@ export default function Dashboard() {
     queryKey: ['leads', campaignId],
     queryFn: async () => {
       if (campaignId) {
+        const { data: campaignLeads, error: campaignLeadsError } = await supabase
+          .from('campaign_leads')
+          .select('lead_id')
+          .eq('campaign_id', campaignId);
+
+        if (campaignLeadsError) {
+          toast({
+            title: "Error!",
+            description: "Failed to fetch campaign leads. " + campaignLeadsError.message,
+            variant: "destructive",
+          });
+          return [];
+        }
+
+        const leadIds = campaignLeads.map(cl => cl.lead_id);
+        
+        if (leadIds.length === 0) {
+          return [];
+        }
+
         const { data, error } = await supabase
           .from('leads')
           .select('*')
-          .in('id',
-            supabase.from('campaign_leads')
-              .select('lead_id')
-              .eq('campaign_id', campaignId)
-          )
+          .in('id', leadIds);
+
         if (error) {
           toast({
             title: "Error!",
             description: "Failed to fetch leads. " + error.message,
             variant: "destructive",
-          })
-          return []
+          });
+          return [];
         }
         return data as Lead[];
       } else {
         const { data, error } = await supabase
           .from('leads')
-          .select('*')
+          .select('*');
         if (error) {
           toast({
             title: "Error!",
             description: "Failed to fetch leads. " + error.message,
             variant: "destructive",
-          })
-          return []
+          });
+          return [];
         }
         return data as Lead[];
       }
     },
-  })
+  });
 
   const { data: campaign, isLoading: isLoadingCampaign, refetch: refetchCampaign } = useQuery({
     queryKey: ['campaign', campaignId],
@@ -95,25 +113,25 @@ export default function Dashboard() {
           .from('campaigns')
           .select('*')
           .eq('id', campaignId)
-          .single()
+          .single();
         if (error) {
           toast({
             title: "Error!",
             description: "Failed to fetch campaign. " + error.message,
             variant: "destructive",
-          })
-          return null
+          });
+          return null;
         }
         return data as Campaign;
       } else {
-        return null
+        return null;
       }
     },
-  })
+  });
 
-  const { mutate: uploadLeads, isLoading: isMutatingUpload } = useMutation({
+  const { mutate: uploadLeads, isPending: isMutatingUpload } = useMutation({
     mutationFn: async (file: File) => {
-      setIsUploading(true)
+      setIsUploading(true);
       const csvData = await file.text();
       const parsedData = parseCSV(csvData);
 
@@ -122,8 +140,8 @@ export default function Dashboard() {
           title: "Error!",
           description: "Please select a campaign to upload leads to.",
           variant: "destructive",
-        })
-        return
+        });
+        return;
       }
 
       // Upload the leads to Supabase
@@ -132,33 +150,33 @@ export default function Dashboard() {
           leads: parsedData,
           campaignId: campaignId
         }
-      })
+      });
 
       if (error) {
         toast({
           title: "Error!",
           description: "Failed to upload leads. " + error.message,
           variant: "destructive",
-        })
-        return
+        });
+        return;
       }
 
       toast({
         title: "Success!",
         description: "Leads uploaded successfully.",
-      })
+      });
 
-      refetchLeads()
-      refetchCampaign()
-      setIsUploading(false)
-      return data
+      refetchLeads();
+      refetchCampaign();
+      setIsUploading(false);
+      return data;
     },
-  })
+  });
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      uploadLeads(file)
+      uploadLeads(file);
     }
   };
 
@@ -168,8 +186,8 @@ export default function Dashboard() {
         title: "Error!",
         description: "No leads to export.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     if (!campaign) {
@@ -177,11 +195,23 @@ export default function Dashboard() {
         title: "Error!",
         description: "No campaign to export.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    exportToExcel(leads, campaign.name);
+    try {
+      await generateCampaignReport(campaign.id, campaign.name);
+      toast({
+        title: "Success!",
+        description: "Report exported successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error!",
+        description: "Failed to export report.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCallLead = async (leadId: string) => {
@@ -189,24 +219,24 @@ export default function Dashboard() {
       body: {
         leadId: leadId
       }
-    })
+    });
 
     if (error) {
       toast({
         title: "Error!",
         description: "Failed to trigger call. " + error.message,
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     toast({
       title: "Success!",
       description: "Call triggered successfully.",
-    })
+    });
 
-    refetchLeads()
-  }
+    refetchLeads();
+  };
 
   return (
     <Layout>
@@ -215,23 +245,27 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <StatCard
               title="Total Leads"
-              value={campaign?.leads_count}
-              isLoading={isLoadingCampaign}
+              value={campaign?.leads_count || 0}
+              description="Total leads in campaign"
+              icon={<FileSpreadsheet className="h-6 w-6" />}
             />
             <StatCard
               title="Completed"
-              value={campaign?.completed}
-              isLoading={isLoadingCampaign}
+              value={campaign?.completed || 0}
+              description="Calls completed"
+              icon={<Phone className="h-6 w-6" />}
             />
             <StatCard
               title="Failed"
-              value={campaign?.failed}
-              isLoading={isLoadingCampaign}
+              value={campaign?.failed || 0}
+              description="Failed calls"
+              icon={<Phone className="h-6 w-6" />}
             />
             <StatCard
               title="Remaining"
-              value={campaign?.remaining}
-              isLoading={isLoadingCampaign}
+              value={campaign?.remaining || 0}
+              description="Leads remaining"
+              icon={<Phone className="h-6 w-6" />}
             />
           </div>
         )}
