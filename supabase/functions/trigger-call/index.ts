@@ -4,7 +4,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const VAPI_API_KEY = Deno.env.get("VAPI_API_KEY");
 const VAPI_API_URL = "https://api.vapi.ai/call/phone";
-const PROJECT_ID = "evoogvazubdyjapdzvpt";
 
 // Define CORS headers for browser requests
 const corsHeaders = {
@@ -19,23 +18,55 @@ serve(async (req) => {
   }
 
   try {
+    console.log("Starting trigger-call function");
+    
+    if (!VAPI_API_KEY) {
+      console.error("VAPI_API_KEY is missing");
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: "VAPI_API_KEY is not configured" 
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      );
+    }
+
     const { leadId } = await req.json();
+    console.log("Processing lead ID:", leadId);
     
     // Get the Supabase client with admin privileges
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("Missing Supabase environment variables");
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: "Supabase configuration is missing" 
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      );
+    }
+    
     // Initialize Supabase client
     const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
     
     // Fetch the lead data
+    console.log("Fetching lead data for ID:", leadId);
     const { data: lead, error: leadError } = await supabaseAdmin
       .from("leads")
       .select("*")
       .eq("id", leadId)
       .single();
     
-    if (leadError || !lead) {
+    if (leadError) {
       console.error("Error fetching lead:", leadError);
       return new Response(
         JSON.stringify({ 
@@ -50,8 +81,25 @@ serve(async (req) => {
       );
     }
     
+    if (!lead) {
+      console.error("Lead not found for ID:", leadId);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: "Lead not found" 
+        }),
+        { 
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        }
+      );
+    }
+    
+    console.log("Lead found:", { id: lead.id, name: lead.name, status: lead.status, phone_id: lead.phone_id });
+    
     // Check if lead has a phone_id assigned
     if (!lead.phone_id) {
+      console.error("Lead does not have a phone_id assigned");
       return new Response(
         JSON.stringify({ 
           success: false,
@@ -66,6 +114,7 @@ serve(async (req) => {
 
     // Check if lead call has already been initiated or completed
     if (lead.status !== "Pending") {
+      console.error("Lead status is not Pending:", lead.status);
       return new Response(
         JSON.stringify({ 
           success: false,
@@ -80,7 +129,7 @@ serve(async (req) => {
 
     // Prepare the payload for Vapi
     const payload = {
-      assistantId: "48b1e44a-c1ff-4f4e-a9e0-7b1e03f197ea", // Updated assistant ID
+      assistantId: "48b1e44a-c1ff-4f4e-a9e0-7b1e03f197ea",
       assistantOverrides: {
         variableValues: {
           Name: lead.name,
@@ -109,7 +158,6 @@ serve(async (req) => {
             enabled: true
           }
         }
-        // Removed webhookUrl property as it's causing the API error
       },
       phoneNumberId: lead.phone_id,
       customer: {
@@ -118,7 +166,7 @@ serve(async (req) => {
       }
     };
 
-    console.log("Making request to Vapi API:", JSON.stringify(payload, null, 2));
+    console.log("Making request to Vapi API with payload:", JSON.stringify(payload, null, 2));
     
     // Make the API call to Vapi
     const response = await fetch(VAPI_API_URL, {
@@ -130,12 +178,17 @@ serve(async (req) => {
       body: JSON.stringify(payload)
     });
     
+    console.log("Vapi API response status:", response.status);
+    console.log("Vapi API response headers:", Object.fromEntries(response.headers.entries()));
+    
     const responseData = await response.json();
+    console.log("Vapi API response data:", JSON.stringify(responseData, null, 2));
     
     // Update lead status in database
     if (response.ok) {
+      console.log("Vapi API call successful, updating lead status");
       // Update lead status to "In Progress"
-      await supabaseAdmin
+      const { error: updateError } = await supabaseAdmin
         .from("leads")
         .update({ 
           status: "In Progress",
@@ -143,6 +196,22 @@ serve(async (req) => {
         })
         .eq("id", leadId);
         
+      if (updateError) {
+        console.error("Error updating lead status:", updateError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            message: "Call initiated but failed to update lead status",
+            error: updateError 
+          }),
+          { 
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          }
+        );
+      }
+        
+      console.log("Lead status updated successfully");
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -154,14 +223,21 @@ serve(async (req) => {
         }
       );
     } else {
+      console.error("Vapi API call failed with status:", response.status);
+      console.error("Vapi API error response:", responseData);
+      
       // Update lead status to indicate failure
-      await supabaseAdmin
+      const { error: updateError } = await supabaseAdmin
         .from("leads")
         .update({ 
           status: "Failed",
           disposition: `API Error: ${responseData.message || "Unknown error"}` 
         })
         .eq("id", leadId);
+        
+      if (updateError) {
+        console.error("Error updating lead status after API failure:", updateError);
+      }
         
       return new Response(
         JSON.stringify({ 
@@ -176,7 +252,8 @@ serve(async (req) => {
       );
     }
   } catch (error) {
-    console.error("Error in trigger-call function:", error);
+    console.error("Unexpected error in trigger-call function:", error);
+    console.error("Error stack:", error.stack);
     return new Response(
       JSON.stringify({ 
         success: false, 
@@ -190,41 +267,3 @@ serve(async (req) => {
     );
   }
 });
-
-// Helper to create a Supabase client (correctly importing from esm.sh instead of relying on a local helper)
-function createClient(supabaseUrl: string, supabaseKey: string) {
-  return {
-    from: (table: string) => ({
-      select: (columns: string) => ({
-        eq: (column: string, value: any) => ({
-          single: () => fetch(`${supabaseUrl}/rest/v1/${table}?select=${columns}&${column}=eq.${value}`, {
-            headers: {
-              "apikey": supabaseKey,
-              "Authorization": `Bearer ${supabaseKey}`,
-              "Content-Type": "application/json"
-            }
-          }).then(res => res.json()).then(data => ({ data: data[0], error: null }))
-        }),
-        single: () => fetch(`${supabaseUrl}/rest/v1/${table}?select=${columns}`, {
-          headers: {
-            "apikey": supabaseKey,
-            "Authorization": `Bearer ${supabaseKey}`,
-            "Content-Type": "application/json"
-          }
-        }).then(res => res.json()).then(data => ({ data: data[0], error: null }))
-      }),
-      update: (updates: any) => ({
-        eq: (column: string, value: any) => fetch(`${supabaseUrl}/rest/v1/${table}?${column}=eq.${value}`, {
-          method: "PATCH",
-          headers: {
-            "apikey": supabaseKey,
-            "Authorization": `Bearer ${supabaseKey}`,
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-          },
-          body: JSON.stringify(updates)
-        }).then(res => ({ data: {}, error: null }))
-      })
-    })
-  };
-}
